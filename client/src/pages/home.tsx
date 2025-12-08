@@ -54,11 +54,13 @@ export default function Home() {
     }
   }, [toToken]);
 
-  // Simple price-based estimate (updates immediately)
+  // Simple price-based estimate (updates immediately - NO external fetching)
+  // This is pure math: (fromAmount * fromPrice) / toPrice = estimatedToAmount
   useEffect(() => {
     if (fromToken && toToken && fromAmount && fromPriceUsd && toPriceUsd) {
       const amount = parseFloat(fromAmount);
-      if (!isNaN(amount) && amount > 0) {
+      if (!isNaN(amount) && amount > 0 && fromPriceUsd > 0 && toPriceUsd > 0) {
+        // Simple calculation: convert to USD, then to target token
         const fromUSD = amount * fromPriceUsd;
         const estimatedTo = fromUSD / toPriceUsd;
         setToAmount(estimatedTo.toFixed(6));
@@ -104,7 +106,7 @@ export default function Home() {
     return () => clearTimeout(debounce);
   }, [fromToken, toToken, fromAmount, slippage]);
 
-  // Refresh prices periodically
+  // Refresh prices periodically (every 5 seconds for better UX)
   useEffect(() => {
     if (!fromToken && !toToken) return;
 
@@ -115,7 +117,7 @@ export default function Home() {
       if (toToken) {
         getTokenPriceUSD(toToken.address, toToken.decimals).then(setToPriceUsd);
       }
-    }, 10000); // Update every 10 seconds
+    }, 5000); // Update every 5 seconds
 
     return () => clearInterval(interval);
   }, [fromToken, toToken]);
