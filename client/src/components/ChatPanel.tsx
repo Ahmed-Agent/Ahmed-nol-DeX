@@ -95,11 +95,15 @@ export function ChatPanel() {
   const handleSend = useCallback(async () => {
     if (!inputValue.trim() || !username || isSending) return;
 
+    const messageText = inputValue.trim();
+    setInputValue('');
     setIsSending(true);
-    const success = await sendMessage(username, inputValue.trim());
-    if (success) {
-      setInputValue('');
+    
+    const success = await sendMessage(username, messageText);
+    if (!success) {
+      setInputValue(messageText);
     }
+    
     setIsSending(false);
   }, [inputValue, username, isSending]);
 

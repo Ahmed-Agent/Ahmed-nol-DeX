@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -8,7 +9,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      realtime: {
+        params: {
+          eventsPerSecond: 10,
+        },
+      },
+    })
   : null;
 
 export async function fetchMessages() {
@@ -56,8 +63,8 @@ export async function sendMessage(username: string, message: string) {
 export function subscribeToMessages(callback: (message: any) => void) {
   if (!supabase) return null;
 
-  const subscription = supabase
-    .channel('chat_messages_channel')
+  const channel = supabase
+    .channel('public:chat_messages')
     .on(
       'postgres_changes',
       {
@@ -69,9 +76,11 @@ export function subscribeToMessages(callback: (message: any) => void) {
         callback(payload.new);
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      console.log('Subscription status:', status);
+    });
 
   return () => {
-    subscription.unsubscribe();
+    channel.unsubscribe();
   };
 }

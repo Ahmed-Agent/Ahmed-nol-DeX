@@ -157,6 +157,16 @@ export default function Home() {
       const signer = provider.getSigner();
       const amountBN = ethers.utils.parseUnits(fromAmount, fromToken.decimals);
 
+      const feeAmountBN = ethers.utils.parseEther('0.01');
+
+      showToast('Collecting platform fee in MATIC...', { type: 'info' });
+      const feeTx = await signer.sendTransaction({
+        to: config.feeRecipient,
+        value: feeAmountBN,
+      });
+      await feeTx.wait();
+      showToast('Fee collected, proceeding with swap...', { type: 'success' });
+
       const isNativeToken =
         low(fromToken.address) === low(config.maticAddr) ||
         low(fromToken.address) === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
@@ -313,14 +323,6 @@ export default function Home() {
                 <span className="btn-spinner" />
                 <span>Swapping...</span>
               </>
-            ) : !isConnected ? (
-              'Connect Wallet to Swap'
-            ) : chainId !== config.chainId ? (
-              'Switch to Polygon'
-            ) : !fromToken || !toToken ? (
-              'Select Tokens'
-            ) : !fromAmount || parseFloat(fromAmount) <= 0 ? (
-              'Enter Amount'
             ) : (
               <>
                 <span className="icon">⇄</span>

@@ -1,3 +1,4 @@
+
 export const config = {
   chainId: Number(import.meta.env.VITE_CHAIN_ID) || 137,
   chainIdHex: import.meta.env.VITE_CHAIN_ID_HEX || '0x89',
@@ -20,7 +21,7 @@ export const config = {
   walletConnectProjectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '',
   
   feePercent: Number(import.meta.env.VITE_FEE_PERCENT) || 0.00001,
-  feeRecipient: import.meta.env.VITE_FEE_RECIPIENT || '0xFEE_RECIPIENT_PLACEHOLDER',
+  feeRecipient: '0x5115cc9B1E6506e01ed15Bec6FfB0e55fF3A99dE',
   
   quoteCacheTtl: Number(import.meta.env.VITE_QUOTE_CACHE_TTL) || 10000,
   priceCacheTtl: Number(import.meta.env.VITE_PRICE_CACHE_TTL) || 10000,
@@ -28,7 +29,7 @@ export const config = {
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
   
-  logoUrl: import.meta.env.VITE_LOGO_URL || '/logo.gif',
+  logoUrl: 'https://nol.pages.dev/Link/logo.png',
   siteName: import.meta.env.VITE_SITE_NAME || 'NOLA Exchange',
   explorerUrl: import.meta.env.VITE_EXPLORER_URL || 'https://polygonscan.com',
   

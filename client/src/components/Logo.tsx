@@ -12,7 +12,7 @@ export function Logo() {
 
   return (
     <img
-      src={imgError ? NOLA_LOGO_FALLBACK : '/logo.png'}
+      src={imgError ? NOLA_LOGO_FALLBACK : 'https://nol.pages.dev/Link/logo.png'}
       alt={`${config.siteName} Logo`}
       className="logo-float"
       onError={handleError}

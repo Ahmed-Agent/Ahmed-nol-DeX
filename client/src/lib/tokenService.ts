@@ -26,15 +26,41 @@ const DARK_SVG_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhl
 
 export async function loadTokensAndMarkets(): Promise<void> {
   try {
-    const r = await fetch('https://tokens.coingecko.com/polygon-pos/all.json');
-    const j = await r.json();
-    tokenList = ((j.tokens || []) as any[]).map((t: any) => ({
+    const [cgResponse, uniResponse] = await Promise.all([
+      fetch('https://tokens.coingecko.com/polygon-pos/all.json'),
+      fetch('https://tokens.uniswap.org/').catch(() => null),
+    ]);
+
+    const cgData = await cgResponse.json();
+    const uniData = uniResponse ? await uniResponse.json().catch(() => null) : null;
+
+    tokenList = ((cgData.tokens || []) as any[]).map((t: any) => ({
       address: low(t.address),
       symbol: t.symbol || '',
       name: t.name || '',
       decimals: t.decimals || 18,
       logoURI: t.logoURI || t.logo || '',
     }));
+
+    if (uniData && uniData.tokens) {
+      const uniTokens = ((uniData.tokens || []) as any[])
+        .filter((t: any) => t.chainId === 137)
+        .map((t: any) => ({
+          address: low(t.address),
+          symbol: t.symbol || '',
+          name: t.name || '',
+          decimals: t.decimals || 18,
+          logoURI: t.logoURI || '',
+        }));
+
+      const existingAddrs = new Set(tokenList.map((t) => t.address));
+      uniTokens.forEach((t) => {
+        if (!existingAddrs.has(t.address)) {
+          tokenList.push(t);
+        }
+      });
+    }
+
     tokenList.forEach((t) => tokenMap.set(t.address, t));
     
     if (!tokenMap.has(low(config.maticAddr))) {
@@ -240,30 +266,39 @@ export async function searchTokens(query: string): Promise<Token[]> {
     return s.toLowerCase().includes(q) || n.toLowerCase().includes(q);
   });
 
-  const cgMatches = matches
-    .filter((t) => cgStatsMap.has(low(t.symbol)) || cgStatsMap.has(low(t.name)))
-    .map((t) => {
-      const stats = cgStatsMap.get(low(t.symbol)) || cgStatsMap.get(low(t.name));
-      const startBonus =
-        t.symbol.toLowerCase().startsWith(q) || t.name.toLowerCase().startsWith(q) ? 1e12 : 0;
-      const v24 = stats?.volume24h || 0;
-      return { t, stats, score: v24 + startBonus };
-    })
-    .sort((a, b) => b.score - a.score);
+  const withStats = matches.map((t) => {
+    const stats = cgStatsMap.get(low(t.symbol)) || cgStatsMap.get(low(t.name));
+    const startBonus = (t.symbol.toLowerCase().startsWith(q) || t.name.toLowerCase().startsWith(q)) ? 1e15 : 0;
+    
+    const marketCap = stats?.price && stats?.volume24h ? (stats.price * stats.volume24h * 1000) : 0;
+    const v24 = stats?.volume24h || 0;
+    
+    const score = startBonus + (marketCap * 10) + v24;
+    
+    return { t, stats, score, marketCap, v24 };
+  });
 
-  const nonCgMatches = matches
-    .filter((t) => {
-      const hasCG = cgStatsMap.has(low(t.symbol)) || cgStatsMap.has(low(t.name));
-      return !hasCG;
-    })
-    .map((t) => {
-      const startBonus =
-        t.symbol.toLowerCase().startsWith(q) || t.name.toLowerCase().startsWith(q) ? 1e10 : 0;
-      return { t, stats: null, score: startBonus };
-    })
-    .sort((a, b) => b.score - a.score);
+  withStats.sort((a, b) => b.score - a.score);
 
-  return [...cgMatches.map((x) => x.t), ...nonCgMatches.map((x) => x.t)].slice(0, 12);
+  const top5ByMarketCap = withStats
+    .filter((x) => x.marketCap > 0)
+    .sort((a, b) => b.marketCap - a.marketCap)
+    .slice(0, 5);
+
+  const remaining = withStats
+    .filter((x) => !top5ByMarketCap.includes(x))
+    .sort((a, b) => b.v24 - a.v24)
+    .slice(0, 10);
+
+  const combined = [...top5ByMarketCap, ...remaining];
+  const seen = new Set<string>();
+  const unique = combined.filter((x) => {
+    if (seen.has(x.t.address)) return false;
+    seen.add(x.t.address);
+    return true;
+  });
+
+  return unique.slice(0, 15).map((x) => x.t);
 }
 
 export function getTopTokens(limit = 15): { token: Token; stats: TokenStats | null }[] {
