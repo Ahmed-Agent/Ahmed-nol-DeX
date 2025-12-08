@@ -37,3 +37,27 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[userenv]
+
+[userenv.shared]
+VITE_CHAIN_ID = "137"
+VITE_CHAIN_ID_HEX = "0x89"
+VITE_CHAIN_NAME = "Polygon"
+VITE_COINGECKO_CHAIN = "polygon-pos"
+VITE_RPC_URL_1 = "https://polygon-rpc.com"
+VITE_RPC_URL_2 = "https://rpc-mainnet.maticvigil.com"
+VITE_ONEINCH_BASE = "https://api.1inch.io/v5.0/137"
+VITE_ZEROX_BASE = "https://polygon.api.0x.org"
+VITE_USDC_ADDR = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+VITE_WETH_ADDR = "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
+VITE_MATIC_ADDR = "0x0000000000000000000000000000000000001010"
+VITE_FEE_PERCENT = "0.00001"
+VITE_FEE_RECIPIENT = "0xFEE_RECIPIENT_PLACEHOLDER"
+VITE_QUOTE_CACHE_TTL = "10000"
+VITE_PRICE_CACHE_TTL = "10000"
+VITE_LOGO_URL = "/logo.gif"
+VITE_SITE_NAME = "NOLA Exchange"
+VITE_EXPLORER_URL = "https://polygonscan.com"
+VITE_DEFAULT_SLIPPAGE = "1"
+VITE_SLIPPAGE_OPTIONS = "0.5,1,2,3"
