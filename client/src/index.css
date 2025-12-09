@@ -701,11 +701,11 @@ body::before {
   position: absolute;
   left: calc(100% + 12px);
   white-space: nowrap;
-  background: linear-gradient(90deg, rgba(180, 68, 255, 0.2), rgba(112, 19, 255, 0.15));
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(14px);
   padding: 8px 14px;
   border-radius: 10px;
-  border: 1px solid rgba(180, 68, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 13px;
   font-weight: 700;
   color: #e0b3ff;
@@ -713,6 +713,7 @@ body::before {
   transform: translateX(-10px);
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .tools-text.show {
@@ -1202,5 +1203,16 @@ button::-moz-focus-inner {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-50px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }

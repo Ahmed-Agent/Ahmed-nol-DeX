@@ -45,10 +45,10 @@ export function ChatPanel() {
         });
       });
 
-      // Ultra-fast polling every 30ms (0.03s) for real-time experience
+      // Fast polling every 300ms (0.3s) - balanced for Supabase
       const pollInterval = setInterval(() => {
         loadMessages();
-      }, 30);
+      }, 300);
 
       return () => {
         if (unsubscribe) unsubscribe();

@@ -8,15 +8,19 @@ interface TickerToken {
   price: number;
   change: number;
   logoURI: string;
-  lastShown: number;
   marketCap: number;
   volume: number;
 }
 
+// Cached initial tokens
+const INITIAL_TOKENS: TickerToken[] = [
+  { symbol: 'USDC', price: 1.0, change: 0.01, logoURI: '', marketCap: 1000000000, volume: 500000000 },
+  { symbol: 'WETH', price: 2500, change: 2.5, logoURI: '', marketCap: 900000000, volume: 400000000 },
+  { symbol: 'WMATIC', price: 0.85, change: -1.2, logoURI: '', marketCap: 800000000, volume: 300000000 },
+];
+
 export function PriceTicker() {
-  const [tokens, setTokens] = useState<TickerToken[]>([]);
-  const tokenPoolRef = useRef<Map<string, TickerToken>>(new Map());
-  const lastRotationRef = useRef<number>(Date.now());
+  const [tokens, setTokens] = useState<TickerToken[]>(INITIAL_TOKENS);
 
   useEffect(() => {
     const loadTickerTokens = () => {
@@ -38,31 +42,11 @@ export function PriceTicker() {
             logoURI: token.logoURI || freshStats?.image || '',
             marketCap,
             volume,
-            lastShown: tokenPoolRef.current.get(token.symbol)?.lastShown || 0,
           };
         })
         .filter((t) => t.price > 0 && t.change !== null);
 
-      // Update pool
-      withStats.forEach(t => tokenPoolRef.current.set(t.symbol, t));
-
-      // Evaluate rotation every 10 minutes
-      const now = Date.now();
-      if (now - lastRotationRef.current > 600000) {
-        lastRotationRef.current = now;
-        
-        // Re-evaluate tokens for next show
-        const eligible = Array.from(tokenPoolRef.current.values()).map(t => ({
-          ...t,
-          score: (t.marketCap * 0.5) + (Math.abs(t.change) * t.volume * 100),
-        }));
-        
-        eligible.sort((a, b) => b.score - a.score);
-        eligible.slice(0, 15).forEach(t => {
-          t.lastShown = now;
-          tokenPoolRef.current.set(t.symbol, t);
-        });
-      }
+      if (withStats.length === 0) return;
 
       // Top 7 by market cap
       const topByMarketCap = [...withStats]
@@ -88,12 +72,10 @@ export function PriceTicker() {
     };
 
     loadTickerTokens();
-    const priceInterval = setInterval(loadTickerTokens, 8000); // Update prices every 8s
+    const priceInterval = setInterval(loadTickerTokens, 8000);
 
     return () => clearInterval(priceInterval);
   }, []);
-
-  if (tokens.length === 0) return null;
 
   // Triple tokens for seamless infinite loop
   const displayTokens = [...tokens, ...tokens, ...tokens];

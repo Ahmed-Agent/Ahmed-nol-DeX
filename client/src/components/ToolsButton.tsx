@@ -55,7 +55,7 @@ export function ToolsButton() {
         </svg>
         
         <div className={`tools-text ${showText ? 'show' : ''}`}>
-          NOLA TOOLS soon
+          soon nol tools
         </div>
       </div>
 

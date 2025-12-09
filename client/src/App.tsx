@@ -11,6 +11,7 @@ import { ChatPanel } from '@/components/ChatPanel';
 import { ToolsButton } from '@/components/ToolsButton';
 import { Footer } from '@/components/Footer';
 import { ToastContainer } from '@/components/Toast';
+import { CookiesPopup } from '@/components/CookiesPopup';
 import Home from '@/pages/home';
 import NotFound from '@/pages/not-found';
 
@@ -31,6 +32,7 @@ function App() {
         <Logo />
         <PriceTicker />
         <ConnectButton />
+        <CookiesPopup />
         <Router />
         <ChatPanel />
         <ToolsButton />

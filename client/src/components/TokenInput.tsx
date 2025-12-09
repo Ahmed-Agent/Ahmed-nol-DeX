@@ -69,36 +69,13 @@ export function TokenInput({
     }
   }, []);
 
-  const [placeholderText, setPlaceholderText] = useState('');
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchQuery(value);
 
-    // Show placeholder of what was removed
-    if (selectedToken && value.length < selectedToken.symbol.length) {
-      setPlaceholderText(selectedToken.symbol.slice(value.length));
-    } else {
-      setPlaceholderText('');
-    }
-
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
-
-    // Clear typing timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-
-    // Set new typing timeout for normalization
-    typingTimeoutRef.current = setTimeout(() => {
-      if (selectedToken && value.trim() === '') {
-        setSearchQuery(selectedToken.symbol);
-        setPlaceholderText('');
-      }
-    }, 2000);
 
     searchTimeoutRef.current = setTimeout(() => {
       handleSearch(value.trim().toLowerCase());
@@ -110,14 +87,6 @@ export function TokenInput({
   };
 
   const handleBlur = () => {
-    // Normalize to selected token when user leaves input
-    if (selectedToken) {
-      setSearchQuery(selectedToken.symbol);
-      setPlaceholderText('');
-    } else {
-      setSearchQuery('');
-      setPlaceholderText('');
-    }
     setShowSuggestions(false);
   };
 
@@ -158,19 +127,20 @@ export function TokenInput({
       const cgStats = getCgStatsMap();
       setSuggestions((prev) =>
         prev.map((item) => {
-          const stats = cgStats.get(low(item.token.symbol)) || cgStats.get(low(item.token.name)) || null;
+          const stats = cgStats.get(low(item.token.symbol)) || cgStats.get(low(item.token.name)) || item.stats;
           return {
             ...item,
             stats,
-            price: stats?.price ?? null,
+            price: stats?.price ?? item.price,
           };
         })
       );
     };
 
+    updatePrices(); // Update immediately
     const priceInterval = setInterval(updatePrices, 8000); // Every 8s
     return () => clearInterval(priceInterval);
-  }, [showSuggestions, suggestions.length]);
+  }, [showSuggestions]);
 
   useEffect(() => {
     return () => {
@@ -223,7 +193,7 @@ export function TokenInput({
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%', position: 'relative' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%' }}>
           <input
             ref={inputRef}
             type="text"
@@ -244,21 +214,6 @@ export function TokenInput({
             }}
             data-testid={`input-token-search-${side}`}
           />
-          {placeholderText && (
-            <span
-              style={{
-                position: 'absolute',
-                left: `calc(10px + ${searchQuery.length * 8.4}px)`,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'rgba(255, 255, 255, 0.25)',
-                pointerEvents: 'none',
-                fontSize: '14px',
-              }}
-            >
-              {placeholderText}
-            </span>
-          )}
         </div>
 
         <div style={{ marginLeft: '8px', minWidth: '120px' }}>
