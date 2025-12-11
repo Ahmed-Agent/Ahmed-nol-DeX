@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useAccount, useChainId } from 'wagmi';
 import { ethers } from 'ethers';
@@ -8,6 +7,7 @@ import { showToast } from '@/components/Toast';
 import { Token, loadTokensAndMarkets, getTokenPriceUSD, getTokenMap } from '@/lib/tokenService';
 import { getBestQuote, executeSwap, approveToken, checkAllowance, parseSwapError, QuoteResult } from '@/lib/swapService';
 import { config, low } from '@/lib/config';
+import { TokenSearchBar } from '@/components/TokenSearchBar';
 
 export default function Home() {
   const { address, isConnected } = useAccount();
@@ -26,6 +26,34 @@ export default function Home() {
   const [isSwapping, setIsSwapping] = useState(false);
   const [tokensLoaded, setTokensLoaded] = useState(false);
 
+  // Function to fetch prices for selected tokens
+  const fetchPrices = useCallback(async () => {
+    if (fromToken) {
+      try {
+        const price = await getTokenPriceUSD(fromToken.address, fromToken.decimals);
+        setFromPriceUsd(price);
+      } catch (e) {
+        console.error("Failed to fetch price for fromToken:", fromToken.address, e);
+        setFromPriceUsd(null);
+      }
+    } else {
+      setFromPriceUsd(null);
+    }
+
+    if (toToken) {
+      try {
+        const price = await getTokenPriceUSD(toToken.address, toToken.decimals);
+        setToPriceUsd(price);
+      } catch (e) {
+        console.error("Failed to fetch price for toToken:", toToken.address, e);
+        setToPriceUsd(null);
+      }
+    } else {
+      setToPriceUsd(null);
+    }
+  }, [fromToken, toToken]);
+
+
   useEffect(() => {
     loadTokensAndMarkets().then(() => {
       setTokensLoaded(true);
@@ -37,27 +65,15 @@ export default function Home() {
     });
   }, []);
 
-  // Fetch prices for selected tokens
+  // Fetch prices for selected tokens using the useCallback function
   useEffect(() => {
-    if (fromToken) {
-      getTokenPriceUSD(fromToken.address, fromToken.decimals).then(setFromPriceUsd);
-    } else {
-      setFromPriceUsd(null);
-    }
-  }, [fromToken]);
-
-  useEffect(() => {
-    if (toToken) {
-      getTokenPriceUSD(toToken.address, toToken.decimals).then(setToPriceUsd);
-    } else {
-      setToPriceUsd(null);
-    }
-  }, [toToken]);
+    fetchPrices();
+  }, [fetchPrices]);
 
   // Simple price-based estimate (updates immediately - NO external fetching)
   // This is pure math: (fromAmount * fromPrice) / toPrice = estimatedToAmount
   useEffect(() => {
-    if (fromToken && toToken && fromAmount && fromPriceUsd && toPriceUsd) {
+    if (fromToken && toToken && fromAmount && fromPriceUsd !== null && toPriceUsd !== null) {
       const amount = parseFloat(fromAmount);
       if (!isNaN(amount) && amount > 0 && fromPriceUsd > 0 && toPriceUsd > 0) {
         // Simple calculation: convert to USD, then to target token
@@ -108,25 +124,18 @@ export default function Home() {
 
   // Refresh prices periodically (every 8 seconds for real-time trading)
   useEffect(() => {
-    if (!fromToken && !toToken) return;
-
     const interval = setInterval(() => {
-      if (fromToken) {
-        getTokenPriceUSD(fromToken.address, fromToken.decimals).then(setFromPriceUsd);
-      }
-      if (toToken) {
-        getTokenPriceUSD(toToken.address, toToken.decimals).then(setToPriceUsd);
-      }
+      fetchPrices();
     }, 8000); // Update every 8 seconds
 
     return () => clearInterval(interval);
-  }, [fromToken, toToken]);
+  }, [fetchPrices]);
 
   const handleSwapTokens = () => {
     const tempToken = fromToken;
     const tempAmount = fromAmount;
     const tempPrice = fromPriceUsd;
-    
+
     setFromToken(toToken);
     setToToken(tempToken);
     setFromAmount(toAmount);
@@ -165,76 +174,85 @@ export default function Home() {
   };
 
   const handleSwap = async () => {
+    if (!isConnected || !address) {
+      showToast('Please connect your wallet first', { type: 'error', ttl: 3000 });
+      return;
+    }
+
+    if (!fromToken || !toToken) {
+      showToast('Please select both tokens', { type: 'error', ttl: 3000 });
+      return;
+    }
+
+    if (!fromAmount || parseFloat(fromAmount) <= 0) {
+      showToast('Please enter a valid amount', { type: 'error', ttl: 3000 });
+      return;
+    }
+
+    if (chainId !== config.chainId) {
+      showToast('Please switch to Polygon network (Chain ID: 137)', { type: 'error', ttl: 4000 });
+      return;
+    }
 
     setIsSwapping(true);
+
     try {
+      const amountWei = ethers.utils.parseUnits(fromAmount, fromToken.decimals);
+
+      showToast('Fetching best quote from 0x and 1inch...', { type: 'info', ttl: 2000 });
+      const bestQuote = await getBestQuote(
+        fromToken.address,
+        toToken.address,
+        amountWei.toString(),
+        fromToken.decimals,
+        toToken.decimals,
+        slippage
+      );
+
+      if (!bestQuote) {
+        showToast('No liquidity available for this trading pair. Try a different token or amount.', { type: 'error', ttl: 5000 });
+        return;
+      }
+
+      setQuote(bestQuote);
+
       const provider = new ethers.providers.Web3Provider(window.ethereum as any);
       const signer = provider.getSigner();
-      const amountBN = ethers.utils.parseUnits(fromAmount, fromToken.decimals);
 
-      // Platform fee: 0.01 MATIC to recipient
-      const feeAmountBN = ethers.utils.parseEther('0.01');
-      console.log('Platform Fee Details:', {
-        amount: '0.01 MATIC',
-        recipient: config.feeRecipient,
-        amountWei: feeAmountBN.toString()
-      });
+      if (fromToken.address !== config.maticAddr) {
+        const spender = bestQuote.data?.to || config.zeroXBase;
+        const allowance = await checkAllowance(provider, fromToken.address, address, spender);
 
-      showToast('Collecting 0.01 MATIC platform fee...', { type: 'info' });
-      const feeTx = await signer.sendTransaction({
-        to: config.feeRecipient,
-        value: feeAmountBN,
-      });
-      await feeTx.wait();
-      console.log('Fee transaction confirmed:', feeTx.hash);
-      showToast('Fee collected, proceeding with swap...', { type: 'success' });
-
-      const isNativeToken =
-        low(fromToken.address) === low(config.maticAddr) ||
-        low(fromToken.address) === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
-
-      if (!isNativeToken && quote.source === '0x' && quote.data?.allowanceTarget) {
-        const allowance = await checkAllowance(
-          provider,
-          fromToken.address,
-          address,
-          quote.data.allowanceTarget
-        );
-
-        if (allowance.lt(amountBN)) {
-          showToast('Approving token...', { type: 'info' });
-          await approveToken(
-            signer,
-            fromToken.address,
-            quote.data.allowanceTarget,
-            ethers.constants.MaxUint256
-          );
-          showToast('Token approved!', { type: 'success' });
+        if (allowance.lt(amountWei)) {
+          showToast('Approval required. Please approve the token in your wallet...', { type: 'info', ttl: 3000 });
+          await approveToken(signer, fromToken.address, spender, ethers.constants.MaxUint256);
+          showToast('Token approved successfully!', { type: 'success', ttl: 3000 });
         }
       }
 
-      showToast('Submitting swap...', { type: 'info' });
+      showToast(`Executing swap via ${bestQuote.source}... Please confirm in your wallet.`, { type: 'info', ttl: 3000 });
       const tx = await executeSwap(
         signer,
-        quote,
+        bestQuote,
         fromToken.address,
         toToken.address,
-        amountBN.toString(),
+        amountWei.toString(),
         fromToken.decimals,
         slippage
       );
 
       if (tx) {
-        showToast('Swap submitted!', { type: 'success', txHash: tx.hash, ttl: 6000 });
-        await tx.wait();
-        showToast('Swap confirmed!', { type: 'success', txHash: tx.hash, ttl: 8000 });
+        showToast('Swap submitted! Waiting for blockchain confirmation...', { type: 'info', ttl: 3000 });
+        const receipt = await tx.wait();
+        showToast(`Swap successful! ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`, { type: 'success', ttl: 6000 });
         setFromAmount('');
         setToAmount('');
-        setQuote(null);
+        await fetchPrices();
       }
-    } catch (e: any) {
-      console.error('Swap error:', e);
-      showToast(parseSwapError(e), { type: 'error', ttl: 6000 });
+    } catch (error: any) {
+      const errorMsg = parseSwapError(error);
+      showToast(errorMsg, { type: 'error', ttl: 6000 });
+      console.error('Swap error:', error);
     } finally {
       setIsSwapping(false);
     }
@@ -247,6 +265,11 @@ export default function Home() {
     toToken &&
     parseFloat(fromAmount) > 0 &&
     !isSwapping;
+
+  const handleSearchTokenSelect = (token: Token) => {
+    setFromToken(token);
+    setFromAmount('');
+  };
 
   return (
     <div className="section-wrapper">
@@ -261,6 +284,8 @@ export default function Home() {
         <h1 className="dex-heading" data-testid="text-heading">
           NOLA Exchange
         </h1>
+
+        <TokenSearchBar onTokenSelect={handleSearchTokenSelect} />
 
         <TokenInput
           side="from"

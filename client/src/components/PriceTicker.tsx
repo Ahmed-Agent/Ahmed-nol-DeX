@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { getTopTokens, getCgStatsMap } from '@/lib/tokenService';
 import { formatUSD, low } from '@/lib/config';
 
@@ -9,18 +9,10 @@ interface TickerToken {
   change: number;
   logoURI: string;
   marketCap: number;
-  volume: number;
 }
 
-// Cached initial tokens
-const INITIAL_TOKENS: TickerToken[] = [
-  { symbol: 'USDC', price: 1.0, change: 0.01, logoURI: '', marketCap: 1000000000, volume: 500000000 },
-  { symbol: 'WETH', price: 2500, change: 2.5, logoURI: '', marketCap: 900000000, volume: 400000000 },
-  { symbol: 'WMATIC', price: 0.85, change: -1.2, logoURI: '', marketCap: 800000000, volume: 300000000 },
-];
-
 export function PriceTicker() {
-  const [tokens, setTokens] = useState<TickerToken[]>(INITIAL_TOKENS);
+  const [tokens, setTokens] = useState<TickerToken[]>([]);
 
   useEffect(() => {
     const loadTickerTokens = () => {
@@ -41,30 +33,35 @@ export function PriceTicker() {
             change,
             logoURI: token.logoURI || freshStats?.image || '',
             marketCap,
-            volume,
+            address: token.address,
           };
         })
         .filter((t) => t.price > 0 && t.change !== null);
 
       if (withStats.length === 0) return;
 
-      // Top 7 by market cap
       const topByMarketCap = [...withStats]
         .sort((a, b) => b.marketCap - a.marketCap)
         .slice(0, 7);
 
-      // Top 8 by absolute 24h move %
       const topByMove = [...withStats]
         .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
         .slice(0, 8);
 
-      const combined = [...topByMarketCap];
-      const seenSymbols = new Set(combined.map((t) => t.symbol));
+      const seenAddresses = new Set<string>();
+      const combined: TickerToken[] = [];
+      
+      topByMarketCap.forEach((t) => {
+        if (!seenAddresses.has(t.address)) {
+          combined.push(t);
+          seenAddresses.add(t.address);
+        }
+      });
       
       topByMove.forEach((t) => {
-        if (!seenSymbols.has(t.symbol)) {
+        if (!seenAddresses.has(t.address)) {
           combined.push(t);
-          seenSymbols.add(t.symbol);
+          seenAddresses.add(t.address);
         }
       });
 
@@ -77,7 +74,8 @@ export function PriceTicker() {
     return () => clearInterval(priceInterval);
   }, []);
 
-  // Triple tokens for seamless infinite loop
+  if (tokens.length === 0) return null;
+
   const displayTokens = [...tokens, ...tokens, ...tokens];
 
   return (

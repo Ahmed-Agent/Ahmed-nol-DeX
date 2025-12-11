@@ -874,6 +874,70 @@ body::before {
   opacity: 0.65;
 }
 
+/* ===== TOKEN SEARCH BAR =================== */
+.token-search-bar-container {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto 20px;
+  z-index: 60;
+}
+
+.token-search-input {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.03)
+  );
+  backdrop-filter: blur(12px);
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+  box-shadow: 0 4px 12px rgba(180, 68, 255, 0.1);
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    black 5%,
+    black 95%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    black 5%,
+    black 95%,
+    transparent 100%
+  );
+}
+
+.token-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.token-search-input:focus {
+  border-color: rgba(180, 68, 255, 0.3);
+  box-shadow: 0 4px 16px rgba(180, 68, 255, 0.2);
+}
+
+.token-search-suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--suggest-bg);
+  border-radius: 12px;
+  padding: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 220;
+  box-shadow: 0 10px 30px rgba(120,0,255,0.08);
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ===== PRICE TICKER =================== */
 .price-ticker-container {
   position: fixed;
@@ -883,7 +947,7 @@ body::before {
   width: 90%;
   max-width: 600px;
   overflow: hidden;
-  z-index: 100;
+  z-index: 50;
   pointer-events: none;
   mask-image: linear-gradient(
     to right,

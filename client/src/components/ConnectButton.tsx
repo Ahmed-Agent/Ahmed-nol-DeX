@@ -29,15 +29,20 @@ export function ConnectButton() {
     };
   }, [showModal]);
 
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+
   const handleConnect = () => {
     if (isConnected) {
-      if (confirm('Disconnect wallet?')) {
-        disconnect();
-        showToast('Wallet disconnected', { type: 'info' });
-      }
+      setShowDisconnectModal(true);
     } else {
       setShowModal(true);
     }
+  };
+
+  const handleDisconnect = () => {
+    disconnect();
+    setShowDisconnectModal(false);
+    showToast('Wallet disconnected', { type: 'info' });
   };
 
   const handleConnectorSelect = async (connector: any) => {
@@ -173,6 +178,71 @@ export function ConnectButton() {
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {showDisconnectModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 3000,
+          }}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.05))',
+              padding: '25px',
+              borderRadius: '20px',
+              width: '300px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 0 25px rgba(180,0,255,0.3)',
+            }}
+          >
+            <h3
+              style={{
+                textAlign: 'center',
+                marginBottom: '16px',
+                color: '#e0b3ff',
+                fontSize: '18px',
+                fontWeight: 600,
+              }}
+            >
+              Disconnect Wallet?
+            </h3>
+            <p style={{ textAlign: 'center', marginBottom: '20px', color: 'rgba(255,255,255,0.7)', fontSize: '14px' }}>
+              Are you sure you want to disconnect your wallet?
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setShowDisconnectModal(false)}
+                className="glassy-btn"
+                style={{ 
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDisconnect}
+                className="glassy-btn"
+                style={{ 
+                  flex: 1,
+                  background: 'linear-gradient(90deg, rgba(255, 100, 100, 0.3), rgba(255, 50, 50, 0.2))',
+                  border: '1px solid rgba(255, 100, 100, 0.4)',
+                }}
+              >
+                Disconnect
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -74,8 +74,12 @@ export async function loadTokensAndMarkets(): Promise<void> {
     }
 
     try {
+      const headers: Record<string, string> = {};
+      if (config.coingeckoApiKey) {
+        headers['x-cg-pro-api-key'] = config.coingeckoApiKey;
+      }
       const marketsUrl = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=250&page=1&sparkline=false&price_change_percentage=24h`;
-      const rm = await fetchWithTimeout(marketsUrl, {}, 5000);
+      const rm = await fetchWithTimeout(marketsUrl, { headers }, 5000);
       const jm = await rm.json();
       (jm as any[]).forEach((c: any) => {
         const sym = low(c.symbol || '');
@@ -188,8 +192,12 @@ async function fetch1InchQuotePrice(addr: string, decimals = 18): Promise<number
 
 async function fetchCoingeckoSimple(addr: string): Promise<number | null> {
   try {
+    const headers: Record<string, string> = {};
+    if (config.coingeckoApiKey) {
+      headers['x-cg-pro-api-key'] = config.coingeckoApiKey;
+    }
     const url = `https://api.coingecko.com/api/v3/simple/token_price/${config.coingeckoChain}?contract_addresses=${addr}&vs_currencies=usd`;
-    const res = await fetchWithTimeout(url, {}, 3000);
+    const res = await fetchWithTimeout(url, { headers }, 3000);
     if (!res.ok) throw new Error('cg simple non-ok');
     const j = await res.json();
     const v = j[low(addr)]?.usd ?? null;
@@ -249,9 +257,9 @@ export async function getTokenPriceUSD(address: string, decimals = 18): Promise<
   }
 
   const sources = [
-    { name: '0x', fn: () => fetch0xPrice(addr), priority: 1, retries: 2 },
-    { name: '1inch', fn: () => fetch1InchQuotePrice(addr, decimals), priority: 2, retries: 2 },
-    { name: 'coingecko_simple', fn: () => fetchCoingeckoSimple(addr), priority: 3, retries: 1 },
+    { name: 'coingecko_simple', fn: () => fetchCoingeckoSimple(addr), priority: 1, retries: 2 },
+    { name: '0x', fn: () => fetch0xPrice(addr), priority: 2, retries: 2 },
+    { name: '1inch', fn: () => fetch1InchQuotePrice(addr, decimals), priority: 3, retries: 2 },
     { name: 'dexscreener', fn: () => fetchDexscreenerPrice(addr), priority: 4, retries: 1 },
     { name: 'geckoterminal', fn: () => fetchGeckoTerminalPrice(addr), priority: 5, retries: 1 },
   ];

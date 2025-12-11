@@ -88,6 +88,9 @@ export function TokenInput({
 
   const handleBlur = () => {
     setShowSuggestions(false);
+    if (selectedToken && searchQuery !== selectedToken.symbol) {
+      setSearchQuery(selectedToken.symbol);
+    }
   };
 
   const handleSelectToken = (token: Token) => {
