@@ -1,0 +1,58 @@
+Activate your full deep, unique, professional potentials. 
+I want you to do the the following  6 steps, after you done , dont answer except you did all of them and runed logs and improved each step:
+
+
+1/ Search bar , and ticker scroll:
+Move the search bar out of the section wrapper, and put it exactly at the midway between the floating logo and the section wrapper. 
+ReMove the ticker scroll  completely.
+
+2/Links:
+
+the i frame link to refer to "nol.pages.dev/snap" 
+MAKE SURE I FRAME IS SMOOTHLY WORKING AND SCROLLABLE,  AND IT IS NOT "VISIT(ABLE)" IFRAME.
+
+terms&privacy link to refer to "nol.pages.dev/terms&privacy"
+
+ X link to refer to "x.com/NOLA_CHAIN"
+
+website link to refer to "nol.pages.dev"
+
+Floating rotating logo fetched from "nol.pages.dev/logoapp.png"
+
+
+3/ "switch chain button" similar in design and theme and size exactly 100% identical to the "ifram button" in style, except that the draw digging the button will be inspired by the picture i attached now.
+
+the new switch button placed under the connect wallet button, the new switch button action is : 
+
+ the current system is only "Polygon (POL)" in  ( suggestions lists, search bar, swaps and logics, connect wallet logic, tokens...etc), the new switch button will switch our system completely into ETH chain only . 100% identical logics. But in "ETH (ETH)" chain only. the user will only start to see and deal only with ethereum chain and tokens. also the button can switch back from ethereum to Polygon. With smooth themed guidelines to the user if he connected to the wrong chain. In other words add all neccessary infos , and be like great platforms uniswap,  dodoex, and ...etc
+The new "switch chain button" connvert very smoothly the app chain AND the entire color palette from purple hues to blue hues by shifting hue only, WHILE PRESERVING:
+
+-saturation
+
+-luminance / lightness
+
+-alpha (transparency)
+
+-gradients, glows, shadows, reflections, glassy and shine intensity..etc
+
+
+-Do not flatten colors or recalculate contrast.
+The UI should feel identical in depth, brightness, and hierarchy, with only a smooth color-family transition from purple to blue.
+
+Make sure the every suggestions or swap logics follow the same rules but fixable to the state of switch chain button. 
+
+# dont forget our fee, in eth transactions,  goes to the same evm address we put for Polygon,  and apply 1.2$ in etherium.... as a fee
+
+4/run test in all logics and features and lists and swaps to check if every thing will be handled by (ETH) 
+
+
+
+
+5/ In public chat , try to make users unable to send links , harsh words , insaults , only ...
+
+
+Current chat system is also connected to the appkit username system,  make sure it purely wired. And if user get appkit connect wallet use name , then remove the other user name.
+
+6/ finally make sure that this app (texts,sizes, distances, and buttons sizes, sections ...etc) all app is flexible and automated optimization for very different phones and screens , to preserve stability, looks , designs structure and  ui , always looks the same no matter what phone and what screen we using
+
+7/ Run logs , in every step again , and then again go through each step to make it more professional , and all requirements and the "great platforms" norms been applied
