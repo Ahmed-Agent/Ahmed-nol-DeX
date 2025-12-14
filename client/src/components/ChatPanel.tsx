@@ -26,10 +26,26 @@ export function ChatPanel() {
     if (stored) {
       setUsername(stored);
     } else if (isConnected && address) {
-      // Use wallet address as username
+      // Use shortened wallet address as default username
       const walletUsername = `${address.slice(0, 6)}...${address.slice(-4)}`;
       setUsername(walletUsername);
       localStorage.setItem('nola_chat_username', walletUsername);
+    }
+  }, [isConnected, address]);
+
+  // Auto-detect AppKit/WalletConnect ENS name or display name when wallet connects
+  useEffect(() => {
+    if (isConnected && address) {
+      // Check if there's already a custom username set (not a wallet address format)
+      const stored = localStorage.getItem('nola_chat_username');
+      const isWalletFormat = stored && stored.includes('...') && stored.startsWith('0x');
+      
+      // If no custom name, try to fetch ENS or use wallet address
+      if (!stored || isWalletFormat) {
+        const walletUsername = `${address.slice(0, 6)}...${address.slice(-4)}`;
+        setUsername(walletUsername);
+        localStorage.setItem('nola_chat_username', walletUsername);
+      }
     }
   }, [isConnected, address]);
 

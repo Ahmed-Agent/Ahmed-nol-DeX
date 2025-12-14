@@ -355,7 +355,7 @@ export async function registerRoutes(
     }
   });
 
-  // Proxy for 0x API (for swap quotes)
+  // Proxy for 0x API - Polygon (for swap quotes)
   app.get("/api/proxy/0x/*", rateLimitMiddleware, async (req, res) => {
     try {
       const zeroXApiKey = getZeroXApiKey();
@@ -390,6 +390,44 @@ export async function registerRoutes(
     } catch (error) {
       console.error('0x proxy error:', error);
       return res.status(500).json({ error: 'Failed to fetch 0x data' });
+    }
+  });
+
+  // Proxy for 0x API - Ethereum mainnet
+  app.get("/api/proxy/0x-eth/*", rateLimitMiddleware, async (req, res) => {
+    try {
+      const zeroXApiKey = getZeroXApiKey();
+      if (!zeroXApiKey) {
+        return res.status(503).json({ error: '0x API key not configured' });
+      }
+
+      const path = req.params[0] || '';
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      const baseUrl = 'https://api.0x.org'; // Ethereum mainnet 0x API
+      const url = `${baseUrl}/${path}${queryString ? '?' + queryString : ''}`;
+      
+      const response = await fetch(url, {
+        headers: {
+          '0x-api-key': zeroXApiKey,
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('0x ETH API error:', response.status, errorText);
+        return res.status(response.status).json({ 
+          error: '0x ETH API request failed',
+          status: response.status,
+          details: errorText
+        });
+      }
+
+      const data = await response.json();
+      return res.json(data);
+    } catch (error) {
+      console.error('0x ETH proxy error:', error);
+      return res.status(500).json({ error: 'Failed to fetch 0x ETH data' });
     }
   });
 

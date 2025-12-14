@@ -1,5 +1,7 @@
 import { ethers } from 'ethers';
-import { config, fetchWithTimeout, low } from './config';
+import { config, ethereumConfig, fetchWithTimeout, low } from './config';
+
+export type ChainType = 'ETH' | 'POL';
 
 export interface QuoteResult {
   source: '0x' | '1inch';
@@ -10,22 +12,29 @@ export interface QuoteResult {
 
 const quoteCache = new Map<string, { best: QuoteResult; ts: number }>();
 
+function getChainConfig(chain: ChainType) {
+  return chain === 'ETH' ? ethereumConfig : config;
+}
+
 function makeQuoteKey(
   fromAddr: string,
   toAddr: string,
   amountWei: string,
-  slippage: number
+  slippage: number,
+  chain: ChainType
 ): string {
-  return `${low(fromAddr)}-${low(toAddr)}-${amountWei}-${slippage}`;
+  return `${chain}-${low(fromAddr)}-${low(toAddr)}-${amountWei}-${slippage}`;
 }
 
 async function fetch0xQuote(
   fromAddr: string,
   toAddr: string,
-  sellAmount: string
+  sellAmount: string,
+  chain: ChainType = 'POL'
 ): Promise<QuoteResult | null> {
   try {
-    const url = `${config.zeroXBase}/swap/v1/quote?sellToken=${encodeURIComponent(fromAddr)}&buyToken=${encodeURIComponent(toAddr)}&sellAmount=${sellAmount}`;
+    const chainConfig = getChainConfig(chain);
+    const url = `${chainConfig.zeroXBase}/swap/v1/quote?sellToken=${encodeURIComponent(fromAddr)}&buyToken=${encodeURIComponent(toAddr)}&sellAmount=${sellAmount}`;
     const resp = await fetchWithTimeout(url, { headers: { '0x-api-key': config.zeroXApiKey } }, 5000);
     if (!resp.ok) return null;
     const j = await resp.json();
@@ -48,10 +57,12 @@ async function fetch1InchQuote(
   amount: string,
   fromDecimals: number,
   toDecimals: number,
-  slippage: number
+  slippage: number,
+  chain: ChainType = 'POL'
 ): Promise<QuoteResult | null> {
   try {
-    const url = `${config.oneInchBase}/quote?fromTokenAddress=${fromAddr}&toTokenAddress=${toAddr}&amount=${amount}`;
+    const chainConfig = getChainConfig(chain);
+    const url = `${chainConfig.oneInchBase}/quote?fromTokenAddress=${fromAddr}&toTokenAddress=${toAddr}&amount=${amount}`;
     const resp = await fetchWithTimeout(url, {}, 5000);
     if (!resp.ok) return null;
     const j = await resp.json();
@@ -74,9 +85,10 @@ export async function getBestQuote(
   amountWei: string,
   fromDecimals: number,
   toDecimals: number,
-  slippage: number
+  slippage: number,
+  chain: ChainType = 'POL'
 ): Promise<QuoteResult | null> {
-  const key = makeQuoteKey(fromAddr, toAddr, amountWei, slippage);
+  const key = makeQuoteKey(fromAddr, toAddr, amountWei, slippage, chain);
   
   const cached = quoteCache.get(key);
   if (cached && Date.now() - cached.ts < config.quoteCacheTtl) {
@@ -84,8 +96,8 @@ export async function getBestQuote(
   }
 
   const [q0x, q1inch] = await Promise.all([
-    fetch0xQuote(fromAddr, toAddr, amountWei),
-    fetch1InchQuote(fromAddr, toAddr, amountWei, fromDecimals, toDecimals, slippage),
+    fetch0xQuote(fromAddr, toAddr, amountWei, chain),
+    fetch1InchQuote(fromAddr, toAddr, amountWei, fromDecimals, toDecimals, slippage, chain),
   ]);
 
   const quotes = [q0x, q1inch].filter(Boolean) as QuoteResult[];
@@ -102,9 +114,10 @@ export function getCachedQuote(
   fromAddr: string,
   toAddr: string,
   amountWei: string,
-  slippage: number
+  slippage: number,
+  chain: ChainType = 'POL'
 ): QuoteResult | null {
-  const key = makeQuoteKey(fromAddr, toAddr, amountWei, slippage);
+  const key = makeQuoteKey(fromAddr, toAddr, amountWei, slippage, chain);
   const cached = quoteCache.get(key);
   if (cached && Date.now() - cached.ts < config.quoteCacheTtl) {
     return cached.best;
@@ -119,9 +132,11 @@ export async function executeSwap(
   toAddr: string,
   amountWei: string,
   fromDecimals: number,
-  slippage: number
+  slippage: number,
+  chain: ChainType = 'POL'
 ): Promise<ethers.providers.TransactionResponse | null> {
   const userAddress = await signer.getAddress();
+  const chainConfig = getChainConfig(chain);
 
   if (quote.source === '0x') {
     const data = quote.data;
@@ -138,7 +153,7 @@ export async function executeSwap(
 
     return await signer.sendTransaction(tx);
   } else if (quote.source === '1inch') {
-    const swapUrl = `${config.oneInchBase}/swap?fromTokenAddress=${fromAddr}&toTokenAddress=${toAddr}&amount=${amountWei}&fromAddress=${userAddress}&slippage=${slippage}&disableEstimate=true`;
+    const swapUrl = `${chainConfig.oneInchBase}/swap?fromTokenAddress=${fromAddr}&toTokenAddress=${toAddr}&amount=${amountWei}&fromAddress=${userAddress}&slippage=${slippage}&disableEstimate=true`;
     const resp = await fetchWithTimeout(swapUrl, {}, 10000);
     if (!resp.ok) throw new Error('1inch swap call failed');
     const j = await resp.json();
@@ -186,7 +201,7 @@ export async function checkAllowance(
   return await erc20.allowance(ownerAddress, spenderAddress);
 }
 
-export function parseSwapError(e: any): string {
+export function parseSwapError(e: any, chain: ChainType = 'POL'): string {
   const s = (e && e.message) ? e.message.toLowerCase() : '';
   if (s.includes('user-rejected') || s.includes('user rejected') || s.includes('request rejected') || s.includes('user denied')) {
     return 'You rejected the wallet request. Please confirm the transaction in your wallet.';
@@ -198,7 +213,8 @@ export function parseSwapError(e: any): string {
     return 'Token allowance is missing. Please approve the token in your wallet.';
   }
   if (s.includes('network') || s.includes('wrong-chain') || s.includes('chain')) {
-    return 'Wrong network — switch your wallet to Polygon (chain 137).';
+    const chainName = chain === 'ETH' ? 'Ethereum (chain 1)' : 'Polygon (chain 137)';
+    return `Wrong network — switch your wallet to ${chainName}.`;
   }
   return (e && e.message) ? `Transaction error: ${e.message}` : 'An unknown error occurred.';
 }
