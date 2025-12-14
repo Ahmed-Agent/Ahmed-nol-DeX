@@ -1,0 +1,51 @@
+Focus and do the following:
+
+I add new API (VITE_LIFI_API_KEY), for bridging primary and also swaps too . add it to our server backend to protect it from front end exposure,  make sure all secrets are.
+
+Our swap logic mainly get qouts from "0x" and fallback to 1 inch , now i want you to update swap logic by the following:
+Fetching the qout prices from "LIFI" primary with "0x" compare who is better price fast .
+Make sure swap is working in both conditions (ETH/POL) and in the both routs always available (LIFI/0x) call & make all configurations need.
+
++The new "switch BRG condition" connvert very smoothly the app to AND convert the entire color palette EXACTLY LIKE CURRENT SMOOTH TRANSFORMATION between (ETH"blue"🔁POL''purple") The new condition hues is "Yellow hues" by shifting hue only, WHILE PRESERVING:
+
+-saturation
+
+-luminance / lightness
+
+-alpha (transparency)
+
+-gradients, glows, shadows, reflections, glassy and shine intensity..etc
+
+-Do not flatten colors or recalculate contrast.
+The UI should feel identical in depth, brightness, and hierarchy, with only a smooth color-family transition from to yellow and like that. Full circle (purple/blue/yellow) they are (POL/ETH/BRG)
++BRG CONDITION HAS NO DEFAULTS IT KEEPS what in there as its 
+
++BRG condition allows to users to SWAP within same chain or BRIDGE tokens too if the inputs are opposed each other chain (ETH&POL).
+
++So make swap button flexible in "BRG" condition to detect if both (from/to) inputs are in one single chain?  Then initiate swap using (0x&Lifi) if each input from different chain(ETH&POL) then initiate Bridging transaction USING "LIFI" ROUTE ONLY.
+
++USING ONLY MY "LIFI API KEY" NO FALL BACKS OR ALTERNATIVES when swap button detects inputs are opposed in chains.
+
++make sure our bridging provider always ready to give qouts , initiate swaps , brdiging , allowances,  approvals,  transactions,  and all neccessary . but only in "BRG" condition,  
+In other conditions keep fetching qouts from "0x and lifi". best & fastes
+
++depending on the "switch chain button " it filters the suggestions lists.
+If switch button is in "POL" it filters showing only (POL) chain tokens
+in "ETH" , all lists shows only tokens in ethereum chain . 
+condition (BRG) in this condition we combine both (ETH/POL) in one , so user can see, search choos any tokens in (ETH&POL) without chain filtering.we filter to show both ETH/POL .
+
+
++Text normalization during blur, it should only refer to the chosen tokens from the suggestions list ones, so not always normalize to the old or defaults . Fix that
+
+
++The main search bar,  which is below the "floating rotating logo"  move  it 0.5 cm down from it is current place , and it should show suggestions filtered by the website condition ETH OR POL , but if BRG filters to show both (POL/ETH) chains suggestions .
+
++In the lists and the suggestions and (from,to ) sections
+remove only the word (/unit) from
+ (price/unit)
+But keep Fetching the price with fully decimals awareness,  with continuing refresh every 8sec
+Dont use fallback mechanisms , fetch all prices in all (CMC or Coingecko every 2 min switch)&(0x)&(LIFI)&(OTHERS IMPLEMENTATIONS), with fast time windows, but always get the show the best price , keep other loading in background,  to detect any new best price 
+
++But The (24h%moves) every where always get it from (CMC OR COINGECKO) every 2min switch between them.
+
++some buttons like (iframe and puplic chat) buttons are highly layered,  it overlays appkit connect chip sometimes,  make sure they are in preferably layer
