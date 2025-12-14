@@ -57,14 +57,63 @@ export const formatUSD = (v: number | null | undefined): string => {
   const opts: Intl.NumberFormatOptions = {
     style: 'currency',
     currency: 'USD',
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
   };
-  if (Math.abs(n) > 0 && Math.abs(n) < 0.01) {
+  
+  // Dynamic decimal precision based on value magnitude
+  const absN = Math.abs(n);
+  if (absN === 0) {
+    opts.maximumFractionDigits = 2;
+    opts.minimumFractionDigits = 2;
+  } else if (absN >= 1000) {
+    opts.maximumFractionDigits = 2;
+    opts.minimumFractionDigits = 2;
+  } else if (absN >= 1) {
+    opts.maximumFractionDigits = 2;
+    opts.minimumFractionDigits = 2;
+  } else if (absN >= 0.01) {
+    opts.maximumFractionDigits = 4;
+    opts.minimumFractionDigits = 2;
+  } else if (absN >= 0.0001) {
     opts.maximumFractionDigits = 6;
     opts.minimumFractionDigits = 4;
+  } else if (absN >= 0.00000001) {
+    opts.maximumFractionDigits = 10;
+    opts.minimumFractionDigits = 6;
+  } else {
+    // Very small values (like some micro-cap tokens)
+    opts.maximumFractionDigits = 12;
+    opts.minimumFractionDigits = 8;
   }
+  
   return new Intl.NumberFormat('en-US', opts).format(n);
+};
+
+// Format token amount with decimal awareness
+export const formatTokenAmount = (v: number | null | undefined, decimals: number = 18): string => {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  const n = Number(v);
+  const absN = Math.abs(n);
+  
+  // Calculate significant digits based on value
+  let maxDecimals = 6;
+  if (absN === 0) {
+    maxDecimals = 2;
+  } else if (absN >= 1000) {
+    maxDecimals = 2;
+  } else if (absN >= 1) {
+    maxDecimals = 4;
+  } else if (absN >= 0.01) {
+    maxDecimals = 6;
+  } else if (absN >= 0.0001) {
+    maxDecimals = 8;
+  } else {
+    maxDecimals = Math.min(decimals, 12);
+  }
+  
+  return n.toLocaleString('en-US', {
+    maximumFractionDigits: maxDecimals,
+    minimumFractionDigits: 2,
+  });
 };
 
 export const shortAddr = (addr: string) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';

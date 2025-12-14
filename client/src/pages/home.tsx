@@ -10,22 +10,36 @@ import { getBestQuote, executeSwap, approveToken, checkAllowance, parseSwapError
 import { config, ethereumConfig, low, isAddress } from '@/lib/config';
 import { useChain, ChainType, chainConfigs } from '@/lib/chainContext';
 
-// ETH chain: ETH (native) -> USDT
+// ETH chain: ETH (native) -> USDC (verified contract addresses)
 const ETHEREUM_DEFAULTS = {
-  fromToken: '0x0000000000000000000000000000000000000000', // ETH (native)
-  toToken: '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
+  fromToken: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE', // ETH (native - 0x standard)
+  toToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC (verified Ethereum mainnet)
 };
 
-// POL chain: USDC -> WETH
+// POL chain: USDC.e (bridged) -> WETH (verified contract addresses)
 const POLYGON_DEFAULTS = {
-  fromToken: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC
-  toToken: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', // WETH
+  fromToken: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC.e (bridged - verified)
+  toToken: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', // WETH (verified Polygon)
 };
 
 // Fee configuration
 const FEE_CONFIG = {
   ETH: { feeUsd: 1.2, feeToken: 'ETH' },
   POL: { feePercent: 0.00001, feeToken: 'MATIC' },
+};
+
+// Native token addresses (both zero address and 0x standard 0xEeee...)
+const NATIVE_ADDRESSES = [
+  '0x0000000000000000000000000000000000000000',
+  '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+  '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+  config.maticAddr?.toLowerCase(),
+].filter(Boolean);
+
+const isNativeToken = (address: string) => {
+  if (!address) return false;
+  const lowAddr = address.toLowerCase();
+  return NATIVE_ADDRESSES.some(a => a?.toLowerCase() === lowAddr);
 };
 
 export default function Home() {
@@ -59,7 +73,7 @@ export default function Home() {
 
   const { data: tokenBalance } = useBalance({
     address: address,
-    token: fromToken && fromToken.address !== '0x0000000000000000000000000000000000000000' 
+    token: fromToken && !isNativeToken(fromToken.address)
       ? fromToken.address as `0x${string}` 
       : undefined,
     chainId: chain === 'ETH' ? 1 : 137,
@@ -73,8 +87,7 @@ export default function Home() {
       return;
     }
 
-    const isNative = fromToken.address === '0x0000000000000000000000000000000000000000' ||
-      fromToken.address === config.maticAddr;
+    const isNative = isNativeToken(fromToken.address);
 
     const balance = isNative ? nativeBalance : tokenBalance;
     
@@ -174,26 +187,28 @@ export default function Home() {
     let newFromToken = tokenMap.get(fromTokenAddr);
     let newToToken = tokenMap.get(toTokenAddr);
     
-    // Native ETH for Ethereum chain
+    // Native ETH for Ethereum chain (using 0x standard address)
     if (chainType === 'ETH' && !newFromToken) {
       newFromToken = {
-        address: '0x0000000000000000000000000000000000000000',
+        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
         symbol: 'ETH',
         name: 'Ethereum',
         decimals: 18,
         logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
       };
+      console.log('[ETH Defaults] Created native ETH token with 0x standard address');
     }
     
-    // USDT fallback for ETH
+    // USDC fallback for ETH (verified contract)
     if (chainType === 'ETH' && !newToToken) {
       newToToken = {
-        address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-        symbol: 'USDT',
-        name: 'Tether USD',
+        address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        symbol: 'USDC',
+        name: 'USD Coin',
         decimals: 6,
-        logoURI: 'https://assets.coingecko.com/coins/images/325/small/Tether.png',
+        logoURI: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
       };
+      console.log('[ETH Defaults] Created USDC token with verified address');
     }
     
     if (newFromToken) setFromToken(newFromToken);
@@ -210,16 +225,24 @@ export default function Home() {
   useEffect(() => {
     const unsubscribe = onChainChange((newChain: ChainType) => {
       if (previousChainRef.current !== newChain) {
+        console.log(`[ChainSwitch] Switching from ${previousChainRef.current} to ${newChain}`);
         previousChainRef.current = newChain;
         
+        // Clear all state on chain switch
         setFromAmount('');
         setToAmount('');
         setQuote(null);
         setFromPriceUsd(null);
         setToPriceUsd(null);
         setInsufficientFunds(false);
+        setUserBalance(null);
+        setFromToken(null);
+        setToToken(null);
         
-        setDefaultTokensForChain(newChain);
+        // Load new default tokens for the chain
+        setDefaultTokensForChain(newChain).then(() => {
+          console.log(`[ChainSwitch] Default tokens loaded for ${newChain}`);
+        });
       }
     });
     
@@ -353,13 +376,14 @@ export default function Home() {
 
     const currentChainId = chain === 'ETH' ? 1 : 137;
     const currentConfig = chain === 'ETH' ? ethereumConfig : config;
-    const nativeAddr = chain === 'ETH' ? '0x0000000000000000000000000000000000000000' : config.maticAddr;
 
     try {
       const amountWei = ethers.utils.parseUnits(fromAmount, fromToken.decimals);
 
       setSwapStep('Finding best price via 0x...');
       showToast('Finding best swap route...', { type: 'info', ttl: 2000 });
+      
+      console.log(`[Swap] Starting swap: ${fromAmount} ${fromToken.symbol} -> ${toToken.symbol} on ${chain}`);
       
       const bestQuote = await getBestQuote(
         fromToken.address,
@@ -373,16 +397,18 @@ export default function Home() {
 
       if (!bestQuote) {
         showToast('No liquidity available for this pair. Try a different token or smaller amount.', { type: 'error', ttl: 5000 });
+        console.warn('[Swap] No quote available');
         return;
       }
 
       setQuote(bestQuote);
+      console.log(`[Swap] Got quote from ${bestQuote.source}`);
 
       const provider = new ethers.providers.Web3Provider(window.ethereum as any);
       const signer = provider.getSigner();
 
       // Check if token needs approval (not native token)
-      if (fromToken.address !== nativeAddr && fromToken.address !== '0x0000000000000000000000000000000000000000') {
+      if (!isNativeToken(fromToken.address)) {
         setSwapStep('Checking token approval...');
         const spender = bestQuote.data?.to || (chain === 'ETH' ? ethereumConfig.zeroXBase : config.zeroXBase);
         const allowance = await checkAllowance(provider, fromToken.address, address, spender);
@@ -441,13 +467,33 @@ export default function Home() {
     !insufficientFunds;
 
   const getButtonText = () => {
-    if (!isConnected) return 'Connect Wallet';
+    if (!isConnected) return 'Connect Wallet to Swap';
     if (!fromToken || !toToken) return 'Select Tokens';
     if (!fromAmount || parseFloat(fromAmount) <= 0) return 'Enter Amount';
     if (insufficientFunds) return `Insufficient ${fromToken?.symbol || ''} Balance`;
-    if (isSwapping) return swapStep || 'Swapping...';
-    if (!quote) return 'Fetching Price...';
-    return 'Swap';
+    if (isSwapping) return swapStep || 'Processing...';
+    if (!quote) return 'Finding Best Price...';
+    return `Swap ${fromToken?.symbol || ''} for ${toToken?.symbol || ''}`;
+  };
+  
+  const getButtonStyle = () => {
+    if (insufficientFunds) {
+      return {
+        background: 'linear-gradient(90deg, #ff4444, #cc3333)',
+        cursor: 'not-allowed',
+      };
+    }
+    if (!isConnected) {
+      return {
+        background: 'linear-gradient(90deg, rgba(180, 68, 255, 0.4), rgba(112, 19, 255, 0.3))',
+      };
+    }
+    if (canSwap) {
+      return {
+        background: 'linear-gradient(90deg, var(--accent-1), var(--accent-2))',
+      };
+    }
+    return {};
   };
 
   return (
@@ -527,11 +573,7 @@ export default function Home() {
             style={{
               width: '100%',
               justifyContent: 'center',
-              background: canSwap
-                ? 'linear-gradient(90deg, var(--accent-1), var(--accent-2))'
-                : insufficientFunds
-                ? 'linear-gradient(90deg, #ff4444, #cc3333)'
-                : undefined,
+              ...getButtonStyle(),
             }}
             onClick={handleSwapClick}
             disabled={isSwapping}

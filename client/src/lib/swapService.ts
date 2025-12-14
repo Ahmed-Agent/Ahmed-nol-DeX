@@ -36,11 +36,20 @@ async function fetch0xQuote(
     // Use server proxy for 0x API calls (handles API keys server-side)
     const proxyBase = chain === 'ETH' ? '/api/proxy/0x-eth' : '/api/proxy/0x';
     const url = `${proxyBase}/swap/v1/quote?sellToken=${encodeURIComponent(fromAddr)}&buyToken=${encodeURIComponent(toAddr)}&sellAmount=${sellAmount}`;
+    console.log(`[0x Quote] Fetching quote: ${chain} | ${fromAddr} -> ${toAddr} | Amount: ${sellAmount}`);
+    
     const resp = await fetchWithTimeout(url, {}, 5000);
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      console.warn(`[0x Quote] Failed with status ${resp.status}`);
+      return null;
+    }
     const j = await resp.json();
-    if (!j || !j.buyAmount) return null;
+    if (!j || !j.buyAmount) {
+      console.warn('[0x Quote] Invalid response - no buyAmount');
+      return null;
+    }
     const normalized = Number(ethers.utils.formatUnits(j.buyAmount, j.buyTokenDecimals || 18));
+    console.log(`[0x Quote] Success: buyAmount=${j.buyAmount}, normalized=${normalized.toFixed(8)}`);
     return {
       source: '0x',
       toAmount: j.buyAmount,
@@ -48,6 +57,7 @@ async function fetch0xQuote(
       data: j,
     };
   } catch (e) {
+    console.error('[0x Quote] Error:', e);
     return null;
   }
 }
@@ -93,19 +103,27 @@ export async function getBestQuote(
   
   const cached = quoteCache.get(key);
   if (cached && Date.now() - cached.ts < config.quoteCacheTtl) {
+    console.log(`[Quote] Using cached quote from ${cached.best.source}`);
     return cached.best;
   }
 
+  console.log(`[Quote] Fetching quotes from 0x and 1inch for ${chain}...`);
   const [q0x, q1inch] = await Promise.all([
     fetch0xQuote(fromAddr, toAddr, amountWei, chain),
     fetch1InchQuote(fromAddr, toAddr, amountWei, fromDecimals, toDecimals, slippage, chain),
   ]);
 
   const quotes = [q0x, q1inch].filter(Boolean) as QuoteResult[];
-  if (quotes.length === 0) return null;
+  console.log(`[Quote] Received ${quotes.length} valid quotes: ${quotes.map(q => `${q.source}=${q.normalized.toFixed(6)}`).join(', ')}`);
+  
+  if (quotes.length === 0) {
+    console.warn('[Quote] No valid quotes available');
+    return null;
+  }
 
   quotes.sort((a, b) => b.normalized - a.normalized);
   const best = quotes[0];
+  console.log(`[Quote] Best quote: ${best.source} with amount ${best.normalized.toFixed(6)}`);
 
   quoteCache.set(key, { best, ts: Date.now() });
   return best;

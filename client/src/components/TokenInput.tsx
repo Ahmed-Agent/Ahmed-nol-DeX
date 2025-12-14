@@ -128,8 +128,11 @@ export function TokenInput({
   const handleBlur = () => {
     setTimeout(() => {
       setShowSuggestions(false);
-      if (selectedToken && searchQuery !== selectedToken.symbol) {
+      // Always normalize to the currently selected token's symbol on blur
+      if (selectedToken) {
         setSearchQuery(selectedToken.symbol);
+      } else {
+        setSearchQuery('');
       }
     }, 200);
   };
@@ -343,7 +346,7 @@ export function TokenInput({
                 </div>
                 <div className="suggestion-price-pill">
                   <div style={{ fontSize: '12px', fontWeight: 700 }}>
-                    {token.currentPrice ? `$${token.currentPrice.toFixed(4)}` : '—'}
+                    {token.currentPrice ? formatUSD(token.currentPrice) : '—'}
                   </div>
                   {typeof token.priceChange24h === 'number' && (
                     <div

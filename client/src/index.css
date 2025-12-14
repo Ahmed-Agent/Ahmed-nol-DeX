@@ -181,23 +181,18 @@ body::before {
   display: block;
   margin: 0 auto;
   pointer-events: none;
-  animation: logoGlow 25s ease-in-out infinite alternate, logoRotate 45s linear infinite;
+  animation: logoRotate 8s ease-in-out infinite alternate;
   z-index: 998;
   position: fixed;
   left: 50%;
-  top: 8vh;
+  top: 6vh;
   transform: translateX(-50%);
-}
-
-@keyframes logoGlow {
-  0% { filter: drop-shadow(0 0 12px #9c00ff); }
-  50% { filter: drop-shadow(0 0 30px #d15fff); }
-  100% { filter: drop-shadow(0 0 12px #9c00ff); }
+  margin-bottom: 20px;
 }
 
 @keyframes logoRotate {
-  0% { transform: translateX(-50%) rotateY(0deg); }
-  100% { transform: translateX(-50%) rotateY(360deg); }
+  0% { transform: translateX(-50%) rotateY(-80deg); }
+  100% { transform: translateX(-50%) rotateY(80deg); }
 }
 
 /* ===== CARD ENTRANCE ANIMATION ===== */
@@ -1033,8 +1028,8 @@ body.eth-chain .glassy-btn.connected {
   }
 
   .logo-float {
-    top: 6vh;
-    width: 72px;
+    top: 4vh;
+    width: 68px;
   }
 
   .chat-sidebar {
@@ -1043,17 +1038,30 @@ body.eth-chain .glassy-btn.connected {
   }
 
   .token-search-bar-container {
-    transform: translate(-50%, -100px);
+    transform: translate(-50%, -95px);
     width: 92%;
+    top: calc(6vh + 100px);
   }
 
   .price-ticker-container {
-    transform: translate(-50%, -150px);
+    transform: translate(-50%, -140px);
   }
 
   .switch-chain-button {
     top: 60px;
     right: 14px;
+  }
+  
+  .input-box {
+    flex-wrap: wrap;
+    padding: 10px;
+    gap: 8px;
+  }
+  
+  .price-small {
+    width: 100%;
+    text-align: center;
+    margin-top: 6px;
   }
 }
 
