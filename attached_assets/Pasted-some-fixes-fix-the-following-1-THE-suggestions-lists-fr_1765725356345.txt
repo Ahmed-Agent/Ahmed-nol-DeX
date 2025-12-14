@@ -1,0 +1,61 @@
+some fixes,  fix the following:
+
+1/ THE suggestions lists (from,to) inputs,  and the MAIN SEARCH BAR:-
+THEY SHOULD HAVE 2 STATES (ETH or POL).
+ACCORDING TO THE STATE OF THE (SWITCH CHAIN BUTTON) EXAMPLE: 
+IN (POL) STATE THEY SHOULD PULL, SHOW AND DEAL WITHIN POL TOKENS ONLY , AND CLEAR ALL INPUTS FROM ANY ETH TOKENS, REPLACE BY POL DEFAULTS.
+ ALSO IN SWITCH TO ETH , LIKE THAT.
+
+(YOU CAN USE MY CMC API AND COINGECKO) 
+note " i added (VITE_CMC_API_KEY) it wasn't in the logics,  make it the second primary source for data with coingecko,  every 2 minutes switch between them , to reduce the over calling on one source so depending on the 2 " use these links they can help you to find reliable data.
+
+https://coinmarketcap.com/dexscan/ethereum/0x11b815efb8f581194ae79006d24e0d814b7697f6/ https://coinmarketcap.com/exchanges/uniswap-v3/ https://coinmarketcap.com/rankings/exchanges/dex/ 
+
+
+2/Update suggestions lists and main search bar, each should show 14 suggestions or less if unavailable : top 50% should be ranked by market cap,  lower 50% should be ranked by the BEST 24h volume, NO DUPLICATES, EXPAND THE ALGOS TO BRING SHOW FASTEST PRICES AND THEN BEST , ALL SOURCES KEEP LOADING THE PRICES,  IF BETTER PRICE APEARS,  THEN IT SHOULD REPLACE currents.
+
+3/ SWITH CHAIN BUTTON
+
+ + CHANGES LOGICS, SWAP AND TRANSACTIONS TO DEAL WITH CURRENT CHOOSEN CHAIN ETH OR POL , 
+ADD NEEDED CONFIGURATION.
++ CLEAR INPUTS smoothly,  user cant even notice, REPLACE THEM BY THE CURRENT CHOOSED CHAIN DEFAULTS
+MAKE ETH CHAIN DEFAULTS SIMILAR TO POL CHAIN DEFAULT,  BUT INSTEAD OF (WETH,USDCpol) USE THE ETHERS TOKEN (ETH,USDCeth)
+REMOVE THE HANDELER THAT SAYS (WRONG CHAIN).
+
+(From,to) inputs make sure they are editable,  user can write and and also choose from their suggestions lists. auto blurr normalization.
+
+
+4/Make the main search bar shows also only tokens from the selected chain . Move it a little bit below,  to sit exactly in the MID way between (the flotation logo , and the exchange container).
+
+5/The iframe button: it has a text pop up (soon nol tools) keep it , but add other whole pop up says (75% swap fees flow to $NOL liquidity) , keep it in a separate pop up , only one at the time , they have beautiful sequence,  once (soon nol tools) apears,  other once (75% swap fees flow to $NOL liquidity) apears. 
+
+6/Make sure that ther are a SERVER backend api , to secure our all secrets and configrations incliding the new eth configuration which you will add.
+
+7/In eth state our fee is 1.2$ collected in eth coin , but calculate in USDC for stability,  
+In Polygon keep the same 
+
+8/ Go to this
+ https://docs.reown.com/appkit/react/core/installation
+It will make you understand how to install appkitt that let users sign in (connect) using their methods like gmail , x, and others . (MAKE SURE THAT CHAT SYSTEM CHECK FIRST IF USER CONNECTED OR HAS APPKIT USER NAME , IF NOT THEN OUR DEFAULT ASK APEARS)
+
+9/FINALLY AND THE MOST IMPORTANT:
+I WILL LET YOUR MAX EFFECTIVENESS HERE: 
+
++I WANT TO ADD TO THE APP SMALL NEW USER GUIDE LINES , ONLY AND ONLY NEW USERS ,
+SHOULD 100% IDENTICAL MATCH OUR THEME.
+THE IFRAME BUTTON NAME IS (SNAP) GIVES QUICK MARKET OVERVIEW from nol.pages.dev/snap
+PUPLIC CHAT THE SPAMMERS NOT ALLOWED , enhance that user cant send bad words or insaults by trick ways like fuc instead of fuck or dik instead of dick.
+
+THE VERY FIRST WELCOME SHOULD be professional ALSO ADHERES THAT ( 75% OF THE SWAP FEES GOES TO $NOL LIQUIDITY , STRONG CIRCUIT ⚡)
+ADD GUIDELINES TO THE USERS HOW TO SWITCH CHAIN , AND END BY (SOON NOL TOOLS) 
+WITH (SMOOTH MODERN AND MOST USED BY LARGE COMPANIES) INTRACTION , THEMED WITH THE WEB
+
++THE MAIN SEARCH BAR THE TOKEN SELECTED IS AUTOMATICALLY GOES TO FROM INPUT, SO IF MY WEBSITE (EXAMPLE.COM) I WANT TO MAKE IT also ABLE TO INPUT TOKENS IN THE FROM INPUT DIRECTLY FROM the URL (EXAMPLE.COM/0x?..any eth or pol address) . But if the address is eth address then the app state convert automatically to (eth state) if the url included pol address then the app automatically opens in (pol state) , making it flixable
+
++CHECK THE (SWAP , ALLOWANCE, TRANSACTIONS, FEES, USER TRANSACTIONS GUIDELINES, ALLOWANCE, NO ENOUGH FUNDS DETECT,  EVERY HINTS OR WARNING OR SIGNS AND EVERY THING THEMED TO OUR CURRENT THEME, WITH FLIXABLITY TO THE STATE) ALL OF THAT 
+1/FOLLOWING MODERN STANDARDS REQUIREMENTS , 
+2/FOLLOWING GLOBAL LARGE COMPANIES LIKE DODOEX, AND UNISWAP  ACCORDING TO THE great SMOOTHNESS Of swapping , to make us "RELIABLE SOURCE"
++ I uploaded you a photo of my logo,  replace the floating rotating logo reference,  to refer to this logo , and make sure it's suitable and smoothly rotating no breaks.
+I hope
+If you can make it 
+our favicon and browsers icons and app logo too
