@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useAccount } from 'wagmi';
+import { useAccount, useEnsName } from 'wagmi';
 import { fetchMessages, sendMessage, subscribeToMessages } from '@/lib/supabaseClient';
 
 interface Message {
@@ -11,6 +11,12 @@ interface Message {
 
 export function ChatPanel() {
   const { address, isConnected } = useAccount();
+  // Use wagmi's useEnsName hook for ENS lookup on Ethereum mainnet
+  const { data: ensName } = useEnsName({
+    address: address,
+    chainId: 1, // Always query Ethereum mainnet for ENS
+  });
+  
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -21,33 +27,23 @@ export function ChatPanel() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLDivElement>(null);
 
+  // Set username from ENS name, stored value, or wallet address
   useEffect(() => {
     const stored = localStorage.getItem('nola_chat_username');
-    if (stored) {
+    const isWalletFormat = stored && stored.includes('...') && stored.startsWith('0x');
+    
+    // Priority: 1. Custom username (not wallet format), 2. ENS name, 3. Shortened wallet address
+    if (stored && !isWalletFormat) {
       setUsername(stored);
+    } else if (ensName) {
+      setUsername(ensName);
+      localStorage.setItem('nola_chat_username', ensName);
     } else if (isConnected && address) {
-      // Use shortened wallet address as default username
       const walletUsername = `${address.slice(0, 6)}...${address.slice(-4)}`;
       setUsername(walletUsername);
       localStorage.setItem('nola_chat_username', walletUsername);
     }
-  }, [isConnected, address]);
-
-  // Auto-detect AppKit/WalletConnect ENS name or display name when wallet connects
-  useEffect(() => {
-    if (isConnected && address) {
-      // Check if there's already a custom username set (not a wallet address format)
-      const stored = localStorage.getItem('nola_chat_username');
-      const isWalletFormat = stored && stored.includes('...') && stored.startsWith('0x');
-      
-      // If no custom name, try to fetch ENS or use wallet address
-      if (!stored || isWalletFormat) {
-        const walletUsername = `${address.slice(0, 6)}...${address.slice(-4)}`;
-        setUsername(walletUsername);
-        localStorage.setItem('nola_chat_username', walletUsername);
-      }
-    }
-  }, [isConnected, address]);
+  }, [isConnected, address, ensName]);
 
   useEffect(() => {
     if (isOpen && username) {

@@ -33,9 +33,10 @@ async function fetch0xQuote(
   chain: ChainType = 'POL'
 ): Promise<QuoteResult | null> {
   try {
-    const chainConfig = getChainConfig(chain);
-    const url = `${chainConfig.zeroXBase}/swap/v1/quote?sellToken=${encodeURIComponent(fromAddr)}&buyToken=${encodeURIComponent(toAddr)}&sellAmount=${sellAmount}`;
-    const resp = await fetchWithTimeout(url, { headers: { '0x-api-key': config.zeroXApiKey } }, 5000);
+    // Use server proxy for 0x API calls (handles API keys server-side)
+    const proxyBase = chain === 'ETH' ? '/api/proxy/0x-eth' : '/api/proxy/0x';
+    const url = `${proxyBase}/swap/v1/quote?sellToken=${encodeURIComponent(fromAddr)}&buyToken=${encodeURIComponent(toAddr)}&sellAmount=${sellAmount}`;
+    const resp = await fetchWithTimeout(url, {}, 5000);
     if (!resp.ok) return null;
     const j = await resp.json();
     if (!j || !j.buyAmount) return null;
