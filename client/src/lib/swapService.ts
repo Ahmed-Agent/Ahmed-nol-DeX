@@ -4,7 +4,7 @@ import { config, ethereumConfig, fetchWithTimeout, low } from './config';
 export type ChainType = 'ETH' | 'POL' | 'BRG';
 
 export interface QuoteResult {
-  source: '0x' | '1inch' | 'lifi';
+  source: '0x' | 'lifi';
   toAmount: string;
   normalized: number;
   data?: any;
@@ -69,35 +69,7 @@ async function fetch0xQuote(
   }
 }
 
-async function fetch1InchQuote(
-  fromAddr: string,
-  toAddr: string,
-  amount: string,
-  fromDecimals: number,
-  toDecimals: number,
-  slippage: number,
-  chain: ChainType = 'POL'
-): Promise<QuoteResult | null> {
-  try {
-    const chainConfig = getChainConfig(chain);
-    const url = `${chainConfig.oneInchBase}/quote?fromTokenAddress=${fromAddr}&toTokenAddress=${toAddr}&amount=${amount}`;
-    const resp = await fetchWithTimeout(url, {}, 5000);
-    if (!resp.ok) return null;
-    const j = await resp.json();
-    if (!j || !j.toTokenAmount) return null;
-    const normalized = Number(ethers.utils.formatUnits(j.toTokenAmount, toDecimals));
-    return {
-      source: '1inch',
-      toAmount: j.toTokenAmount,
-      normalized,
-      data: j,
-    };
-  } catch (e) {
-    return null;
-  }
-}
-
-// LIFI quote for same-chain swaps
+// LIFI quote for same-chain swaps or cross-chain bridges
 async function fetchLifiQuote(
   fromAddr: string,
   toAddr: string,
@@ -165,13 +137,14 @@ export async function getBestQuote(
     return cached.best;
   }
 
-  console.log(`[Quote] Fetching quotes from 0x and 1inch for ${chain}...`);
-  const [q0x, q1inch] = await Promise.all([
+  const chainId = chain === 'ETH' ? CHAIN_IDS.ETH : CHAIN_IDS.POL;
+  console.log(`[Quote] Fetching quotes from 0x and LIFI for ${chain}...`);
+  const [q0x, qLifi] = await Promise.all([
     fetch0xQuote(fromAddr, toAddr, amountWei, chain),
-    fetch1InchQuote(fromAddr, toAddr, amountWei, fromDecimals, toDecimals, slippage, chain),
+    fetchLifiQuote(fromAddr, toAddr, amountWei, toDecimals, chainId, chainId),
   ]);
 
-  const quotes = [q0x, q1inch].filter(Boolean) as QuoteResult[];
+  const quotes = [q0x, qLifi].filter(Boolean) as QuoteResult[];
   console.log(`[Quote] Received ${quotes.length} valid quotes: ${quotes.map(q => `${q.source}=${q.normalized.toFixed(6)}`).join(', ')}`);
   
   if (quotes.length === 0) {
@@ -229,18 +202,17 @@ export async function executeSwap(
     };
 
     return await signer.sendTransaction(tx);
-  } else if (quote.source === '1inch') {
-    const swapUrl = `${chainConfig.oneInchBase}/swap?fromTokenAddress=${fromAddr}&toTokenAddress=${toAddr}&amount=${amountWei}&fromAddress=${userAddress}&slippage=${slippage}&disableEstimate=true`;
-    const resp = await fetchWithTimeout(swapUrl, {}, 10000);
-    if (!resp.ok) throw new Error('1inch swap call failed');
-    const j = await resp.json();
-    if (!j || !j.tx) throw new Error('Invalid 1inch swap response');
-
+  } else if (quote.source === 'lifi') {
+    const data = quote.data;
+    if (!data || !data.transactionRequest) {
+      throw new Error('Invalid LIFI quote data');
+    }
+    const txReq = data.transactionRequest;
     const tx: ethers.providers.TransactionRequest = {
-      to: j.tx.to,
-      data: j.tx.data,
-      value: j.tx.value ? ethers.BigNumber.from(j.tx.value) : undefined,
-      gasLimit: j.tx.gas ? ethers.BigNumber.from(j.tx.gas).mul(120).div(100) : undefined,
+      to: txReq.to,
+      data: txReq.data,
+      value: txReq.value ? ethers.BigNumber.from(txReq.value) : undefined,
+      gasLimit: txReq.gasLimit ? ethers.BigNumber.from(txReq.gasLimit).mul(120).div(100) : undefined,
     };
 
     return await signer.sendTransaction(tx);

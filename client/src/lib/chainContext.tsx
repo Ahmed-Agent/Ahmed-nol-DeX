@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { config, ethereumConfig } from './config';
 
-export type ChainType = 'ETH' | 'POL';
+export type ChainType = 'ETH' | 'POL' | 'BRG';
 
 export interface ChainConfig {
   chainId: number;
@@ -48,9 +48,25 @@ const ethereumChainConfig: ChainConfig = {
   nativeAddr: '0x0000000000000000000000000000000000000000',
 };
 
+const bridgeChainConfig: ChainConfig = {
+  chainId: 0,
+  chainIdHex: '0x0',
+  chainName: 'Bridge Mode',
+  coingeckoChain: 'ethereum',
+  rpcUrls: [],
+  oneInchBase: '',
+  zeroXBase: '',
+  usdcAddr: '',
+  wethAddr: '',
+  explorerUrl: '',
+  nativeSymbol: 'BRG',
+  nativeAddr: '',
+};
+
 export const chainConfigs: Record<ChainType, ChainConfig> = {
   ETH: ethereumChainConfig,
   POL: polygonChainConfig,
+  BRG: bridgeChainConfig,
 };
 
 type ChainChangeCallback = (chain: ChainType, config: ChainConfig) => void;

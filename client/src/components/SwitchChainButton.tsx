@@ -11,43 +11,71 @@ export function SwitchChainButton() {
   const { chain, setChain } = useChain();
 
   useEffect(() => {
-    const newChain: ChainType = chainId === mainnet.id ? 'ETH' : 'POL';
+    document.body.classList.remove('eth-chain', 'brg-chain');
     
-    if (newChain !== chain) {
-      setChain(newChain);
-    }
-    
-    if (chainId === mainnet.id) {
+    if (chain === 'ETH') {
       document.body.classList.add('eth-chain');
       document.documentElement.style.setProperty('--accent-1', '#4589ff');
       document.documentElement.style.setProperty('--accent-2', '#1370ff');
+    } else if (chain === 'BRG') {
+      document.body.classList.add('brg-chain');
+      document.documentElement.style.setProperty('--accent-1', '#ffb545');
+      document.documentElement.style.setProperty('--accent-2', '#ff9f13');
     } else {
-      document.body.classList.remove('eth-chain');
       document.documentElement.style.setProperty('--accent-1', '#b445ff');
       document.documentElement.style.setProperty('--accent-2', '#7013ff');
     }
-  }, [chainId, chain, setChain]);
+  }, [chain]);
 
   const handleSwitch = async () => {
-    try {
-      const targetChain = chain === 'POL' ? mainnet : polygon;
-      await switchChain({ chainId: targetChain.id });
-      showToast(`Switching to ${targetChain.name}...`, { type: 'info' });
-    } catch (error: any) {
-      if (error.code === 4001) {
-        showToast('Chain switch cancelled', { type: 'warn' });
-      } else {
-        showToast('Failed to switch chain', { type: 'error' });
+    if (chain === 'POL') {
+      try {
+        await switchChain({ chainId: mainnet.id });
+        setChain('ETH');
+        showToast('Switching to Ethereum...', { type: 'info' });
+      } catch (error: any) {
+        if (error.code === 4001) {
+          showToast('Chain switch cancelled', { type: 'warn' });
+        } else {
+          showToast('Failed to switch chain', { type: 'error' });
+        }
+      }
+    } else if (chain === 'ETH') {
+      setChain('BRG');
+      showToast('Bridge mode activated', { type: 'info' });
+    } else {
+      try {
+        await switchChain({ chainId: polygon.id });
+        setChain('POL');
+        showToast('Switching to Polygon...', { type: 'info' });
+      } catch (error: any) {
+        if (error.code === 4001) {
+          showToast('Chain switch cancelled', { type: 'warn' });
+        } else {
+          showToast('Failed to switch chain', { type: 'error' });
+        }
       }
     }
   };
 
+  const getClassName = () => {
+    if (chain === 'ETH') return 'switch-chain-button eth-active';
+    if (chain === 'BRG') return 'switch-chain-button brg-active';
+    return 'switch-chain-button';
+  };
+
+  const getAriaLabel = () => {
+    if (chain === 'POL') return 'Switch to Ethereum';
+    if (chain === 'ETH') return 'Switch to Bridge mode';
+    return 'Switch to Polygon';
+  };
+
   return (
     <div
-      className={`switch-chain-button ${chain === 'ETH' ? 'eth-active' : ''}`}
+      className={getClassName()}
       onClick={handleSwitch}
       role="button"
-      aria-label={`Switch to ${chain === 'POL' ? 'Ethereum' : 'Polygon'}`}
+      aria-label={getAriaLabel()}
       data-testid="button-switch-chain"
     >
       <div className="switch-chain-arrows">⇅</div>

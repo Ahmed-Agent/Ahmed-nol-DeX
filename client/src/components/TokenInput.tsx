@@ -3,6 +3,10 @@ import { Token, TokenStats, searchTokens, getTopTokens, getPlaceholderImage, get
 import { formatUSD, low, isAddress } from '@/lib/config';
 import { useChain } from '@/lib/chainContext';
 
+interface ExtendedToken extends Token {
+  chainId?: number;
+}
+
 interface TokenInputProps {
   side: 'from' | 'to';
   selectedToken: Token | null;
@@ -25,10 +29,10 @@ export function TokenInput({
   disabled = false,
 }: TokenInputProps) {
   const { chain } = useChain();
-  const chainId = chain === 'ETH' ? 1 : 137;
+  const chainId = chain === 'ETH' ? 1 : chain === 'POL' ? 137 : 0;
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<{ token: Token & { currentPrice?: number; priceChange24h?: number }; stats: TokenStats | null; price: number | null }[]>([]);
+  const [suggestions, setSuggestions] = useState<{ token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }; stats: TokenStats | null; price: number | null }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -37,71 +41,82 @@ export function TokenInput({
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleSearch = useCallback(async (query: string) => {
-    const currentChainId = chain === 'ETH' ? 1 : 137;
+    // BRG mode: search both chains; otherwise single chain
+    const chainIds = chain === 'BRG' ? [1, 137] : [chain === 'ETH' ? 1 : 137];
     
     if (!query) {
-      const topTokens = getTopTokens(15, currentChainId);
-      const cgStats = getCgStatsMap(currentChainId);
-      const withPrices = topTokens.map(({ token, stats }) => {
-        const tokenStats = stats || cgStats.get(low(token.symbol)) || cgStats.get(low(token.name));
-        return {
-          token: {
-            ...token,
-            currentPrice: tokenStats?.price ?? undefined,
-            priceChange24h: tokenStats?.change ?? undefined,
-          },
-          stats: tokenStats || null,
-          price: tokenStats?.price ?? null,
-        };
-      });
-      setSuggestions(withPrices);
+      const allTokens: { token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }; stats: TokenStats | null; price: number | null }[] = [];
+      
+      for (const cid of chainIds) {
+        const topTokens = getTopTokens(chain === 'BRG' ? 8 : 15, cid);
+        const cgStats = getCgStatsMap(cid);
+        topTokens.forEach(({ token, stats }) => {
+          const tokenStats = stats || cgStats.get(low(token.symbol)) || cgStats.get(low(token.name));
+          allTokens.push({
+            token: {
+              ...token,
+              chainId: cid,
+              currentPrice: tokenStats?.price ?? undefined,
+              priceChange24h: tokenStats?.change ?? undefined,
+            },
+            stats: tokenStats || null,
+            price: tokenStats?.price ?? null,
+          });
+        });
+      }
+      setSuggestions(allTokens.slice(0, 15));
       setShowSuggestions(true);
       return;
     }
 
     setLoading(true);
     try {
-      // Check if query is a token address
-      if (isAddress(query)) {
-        const token = await getTokenByAddress(query, currentChainId);
-        if (token) {
-          const cgStats = getCgStatsMap(currentChainId);
-          const stats = cgStats.get(low(token.symbol)) || cgStats.get(low(token.name)) || null;
-          setSuggestions([{
-            token: {
-              ...token,
-              currentPrice: stats?.price ?? undefined,
-              priceChange24h: stats?.change ?? undefined,
-            },
-            stats,
-            price: stats?.price ?? null,
-          }]);
-          setShowSuggestions(true);
-          return;
+      const allResults: { token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }; stats: TokenStats | null; price: number | null; marketCap: number }[] = [];
+      
+      for (const cid of chainIds) {
+        // Check if query is a token address
+        if (isAddress(query)) {
+          const token = await getTokenByAddress(query, cid);
+          if (token) {
+            const cgStats = getCgStatsMap(cid);
+            const stats = cgStats.get(low(token.symbol)) || cgStats.get(low(token.name)) || null;
+            allResults.push({
+              token: {
+                ...token,
+                chainId: cid,
+                currentPrice: stats?.price ?? undefined,
+                priceChange24h: stats?.change ?? undefined,
+              },
+              stats,
+              price: stats?.price ?? null,
+              marketCap: stats?.marketCap || 0,
+            });
+          }
+        } else {
+          const results = await searchTokens(query, cid);
+          const cgStats = getCgStatsMap(cid);
+
+          results.forEach((token) => {
+            const stats = cgStats.get(low(token.symbol)) || cgStats.get(low(token.name)) || null;
+            const price = stats?.price ?? null;
+            const marketCap = stats?.marketCap || (stats?.price && stats?.volume24h ? (stats.price * stats.volume24h * 1000) : 0);
+            allResults.push({
+              token: {
+                ...token,
+                chainId: cid,
+                currentPrice: stats?.price ?? undefined,
+                priceChange24h: stats?.change ?? undefined,
+              },
+              stats,
+              price,
+              marketCap,
+            });
+          });
         }
       }
 
-      const results = await searchTokens(query, currentChainId);
-      const cgStats = getCgStatsMap(currentChainId);
-
-      const withPrices = results.map((token) => {
-        const stats = cgStats.get(low(token.symbol)) || cgStats.get(low(token.name)) || null;
-        const price = stats?.price ?? null;
-        const marketCap = stats?.price && stats?.volume24h ? (stats.price * stats.volume24h * 1000) : 0;
-        return {
-          token: {
-            ...token,
-            currentPrice: stats?.price ?? undefined,
-            priceChange24h: stats?.change ?? undefined,
-          },
-          stats,
-          price,
-          marketCap,
-        };
-      });
-
-      withPrices.sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0));
-      setSuggestions(withPrices.slice(0, 15));
+      allResults.sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0));
+      setSuggestions(allResults.slice(0, 15));
       setShowSuggestions(true);
     } finally {
       setLoading(false);
@@ -170,10 +185,10 @@ export function TokenInput({
     if (!showSuggestions || suggestions.length === 0) return;
 
     const updatePrices = () => {
-      const currentChainId = chain === 'ETH' ? 1 : 137;
-      const cgStats = getCgStatsMap(currentChainId);
       setSuggestions((prev) =>
         prev.map((item) => {
+          const tokenChainId = (item.token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
+          const cgStats = getCgStatsMap(tokenChainId);
           const stats = cgStats.get(low(item.token.symbol)) || cgStats.get(low(item.token.name)) || item.stats;
           return {
             ...item,
@@ -249,7 +264,7 @@ export function TokenInput({
           <input
             ref={inputRef}
             type="text"
-            placeholder={`Search ${chain} tokens...`}
+            placeholder={chain === 'BRG' ? 'Search ETH & POL tokens...' : `Search ${chain} tokens...`}
             value={searchQuery}
             onChange={handleInputChange}
             onFocus={handleFocus}
@@ -298,7 +313,7 @@ export function TokenInput({
               {formatUSD(Number(amount || 0) * priceUsd)}
             </div>
             <div className="price-unit" data-testid={`text-unit-price-${side}`}>
-              {formatUSD(priceUsd)} / unit
+              {formatUSD(priceUsd)}
             </div>
           </div>
         )}
@@ -313,55 +328,70 @@ export function TokenInput({
           {loading ? (
             <div style={{ padding: '12px', textAlign: 'center', opacity: 0.7 }}>Loading...</div>
           ) : suggestions.length === 0 ? (
-            <div style={{ padding: '12px', textAlign: 'center', opacity: 0.7 }}>No {chain} tokens found</div>
+            <div style={{ padding: '12px', textAlign: 'center', opacity: 0.7 }}>No {chain === 'BRG' ? 'ETH/POL' : chain} tokens found</div>
           ) : (
-            suggestions.map(({ token, stats, price }) => (
-              <div
-                key={token.address}
-                className="suggestion-item"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleSelectToken(token);
-                }}
-                style={{ cursor: 'pointer', userSelect: 'none' }}
-              >
-                <div className="suggestion-left">
-                  {token.logoURI && (
-                    <img 
-                      src={token.logoURI} 
-                      alt={token.symbol}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = getPlaceholderImage();
-                      }}
-                    />
-                  )}
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '13px' }}>
-                      {token.symbol}
-                    </div>
-                    <div style={{ fontSize: '11px', opacity: 0.7 }}>
-                      {token.name}
+            suggestions.map(({ token, stats, price }) => {
+              const tokenChainId = (token as ExtendedToken).chainId;
+              const chainLabel = tokenChainId === 1 ? 'ETH' : tokenChainId === 137 ? 'POL' : null;
+              return (
+                <div
+                  key={`${token.address}-${tokenChainId || ''}`}
+                  className="suggestion-item"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelectToken(token);
+                  }}
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                >
+                  <div className="suggestion-left">
+                    {token.logoURI && (
+                      <img 
+                        src={token.logoURI} 
+                        alt={token.symbol}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = getPlaceholderImage();
+                        }}
+                      />
+                    )}
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {token.symbol}
+                        {chain === 'BRG' && chainLabel && (
+                          <span style={{
+                            fontSize: '9px',
+                            padding: '1px 4px',
+                            borderRadius: '3px',
+                            background: tokenChainId === 1 ? 'rgba(98, 126, 234, 0.3)' : 'rgba(130, 71, 229, 0.3)',
+                            color: tokenChainId === 1 ? '#627eea' : '#8247e5',
+                          }}>
+                            {chainLabel}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '11px', opacity: 0.7 }}>
+                        {token.name}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="suggestion-price-pill">
-                  <div style={{ fontSize: '12px', fontWeight: 700 }}>
-                    {token.currentPrice ? formatUSD(token.currentPrice) : '—'}
-                  </div>
-                  {typeof token.priceChange24h === 'number' && (
-                    <div
-                      style={{
-                        fontSize: '10px',
-                        color: token.priceChange24h >= 0 ? '#9ef39e' : '#ff9e9e',
-                      }}
-                    >
-                      {token.priceChange24h >= 0 ? '+' : ''}
-                      {token.priceChange24h.toFixed(2)}%
+                  <div className="suggestion-price-pill">
+                    <div style={{ fontSize: '12px', fontWeight: 700 }}>
+                      {token.currentPrice ? formatUSD(token.currentPrice) : '—'}
                     </div>
-                  )}
+                    {typeof token.priceChange24h === 'number' && (
+                      <div
+                        style={{
+                          fontSize: '10px',
+                          color: token.priceChange24h >= 0 ? '#9ef39e' : '#ff9e9e',
+                        }}
+                      >
+                        {token.priceChange24h >= 0 ? '+' : ''}
+                        {token.priceChange24h.toFixed(2)}%
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

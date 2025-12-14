@@ -6,9 +6,13 @@ import { TokenInput } from '@/components/TokenInput';
 import { SlippageControl } from '@/components/SlippageControl';
 import { showToast } from '@/components/Toast';
 import { Token, loadTokensAndMarkets, loadTokensForChain, getTokenPriceUSD, getTokenMap, getTokenByAddress } from '@/lib/tokenService';
-import { getBestQuote, executeSwap, approveToken, checkAllowance, parseSwapError, QuoteResult } from '@/lib/swapService';
+import { getBestQuote, getLifiBridgeQuote, executeSwap, approveToken, checkAllowance, parseSwapError, QuoteResult } from '@/lib/swapService';
 import { config, ethereumConfig, low, isAddress } from '@/lib/config';
 import { useChain, ChainType, chainConfigs } from '@/lib/chainContext';
+
+interface ExtendedToken extends Token {
+  chainId?: number;
+}
 
 // ETH chain: ETH (native) -> USDC (verified contract addresses)
 const ETHEREUM_DEFAULTS = {
@@ -48,8 +52,8 @@ export default function Home() {
   const { chain, chainConfig, setChain, onChainChange } = useChain();
   const [location] = useLocation();
 
-  const [fromToken, setFromToken] = useState<Token | null>(null);
-  const [toToken, setToToken] = useState<Token | null>(null);
+  const [fromToken, setFromToken] = useState<ExtendedToken | null>(null);
+  const [toToken, setToToken] = useState<ExtendedToken | null>(null);
   const [fromAmount, setFromAmount] = useState('');
   const [toAmount, setToAmount] = useState('');
   const [slippage, setSlippage] = useState(config.defaultSlippage);
@@ -63,12 +67,30 @@ export default function Home() {
   const [tokensLoaded, setTokensLoaded] = useState(false);
   const [userBalance, setUserBalance] = useState<string | null>(null);
   const [insufficientFunds, setInsufficientFunds] = useState(false);
+  const [isBridgeMode, setIsBridgeMode] = useState(false);
   const previousChainRef = useRef<ChainType>(chain);
 
-  // Get user balance for from token
+  // Determine if this is a bridge operation (cross-chain in BRG mode)
+  const getTokenChainId = (token: ExtendedToken | null): number => {
+    if (!token) return chain === 'ETH' ? 1 : 137;
+    if (token.chainId) return token.chainId;
+    return chain === 'ETH' ? 1 : 137;
+  };
+
+  const isCrossChainBridge = (): boolean => {
+    if (chain !== 'BRG') return false;
+    if (!fromToken || !toToken) return false;
+    const fromChainId = getTokenChainId(fromToken);
+    const toChainId = getTokenChainId(toToken);
+    return fromChainId !== toChainId;
+  };
+
+  // Get user balance for from token (use token's chainId in BRG mode)
+  const fromTokenChainId = fromToken ? getTokenChainId(fromToken) : (chain === 'ETH' ? 1 : 137);
+  
   const { data: nativeBalance } = useBalance({
     address: address,
-    chainId: chain === 'ETH' ? 1 : 137,
+    chainId: fromTokenChainId,
   });
 
   const { data: tokenBalance } = useBalance({
@@ -76,7 +98,7 @@ export default function Home() {
     token: fromToken && !isNativeToken(fromToken.address)
       ? fromToken.address as `0x${string}` 
       : undefined,
-    chainId: chain === 'ETH' ? 1 : 137,
+    chainId: fromTokenChainId,
   });
 
   // Check balance and set insufficient funds state
@@ -147,11 +169,13 @@ export default function Home() {
   }, [tokensLoaded, location]);
 
   const fetchPrices = useCallback(async () => {
-    const currentChainId = chain === 'ETH' ? 1 : 137;
+    // Use token-specific chainId in BRG mode
+    const fromChainId = fromToken ? getTokenChainId(fromToken) : (chain === 'ETH' ? 1 : 137);
+    const toChainId = toToken ? getTokenChainId(toToken) : (chain === 'ETH' ? 1 : 137);
     
     if (fromToken) {
       try {
-        const price = await getTokenPriceUSD(fromToken.address, fromToken.decimals, currentChainId);
+        const price = await getTokenPriceUSD(fromToken.address, fromToken.decimals, fromChainId);
         setFromPriceUsd(price);
       } catch (e) {
         console.error("Failed to fetch price for fromToken:", fromToken.address, e);
@@ -163,7 +187,7 @@ export default function Home() {
 
     if (toToken) {
       try {
-        const price = await getTokenPriceUSD(toToken.address, toToken.decimals, currentChainId);
+        const price = await getTokenPriceUSD(toToken.address, toToken.decimals, toChainId);
         setToPriceUsd(price);
       } catch (e) {
         console.error("Failed to fetch price for toToken:", toToken.address, e);
@@ -269,25 +293,51 @@ export default function Home() {
     }
   }, [fromAmount, fromPriceUsd, toPriceUsd, fromToken, toToken]);
 
-  // Fetch real quote
+  // Fetch real quote (bridge or swap depending on chain mode)
   useEffect(() => {
     const fetchQuote = async () => {
       if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
         setQuote(null);
+        setIsBridgeMode(false);
         return;
       }
 
       try {
         const amountBN = ethers.utils.parseUnits(fromAmount, fromToken.decimals);
-        const result = await getBestQuote(
-          fromToken.address,
-          toToken.address,
-          amountBN.toString(),
-          fromToken.decimals,
-          toToken.decimals,
-          slippage,
-          chain
-        );
+        const fromChainId = getTokenChainId(fromToken);
+        const toChainId = getTokenChainId(toToken);
+        const isBridge = chain === 'BRG' && fromChainId !== toChainId;
+        
+        setIsBridgeMode(isBridge);
+        
+        let result: QuoteResult | null = null;
+        
+        if (isBridge) {
+          // Cross-chain bridge via LIFI only
+          console.log(`[Quote] Bridge mode: ${fromChainId} -> ${toChainId}`);
+          result = await getLifiBridgeQuote(
+            fromToken.address,
+            toToken.address,
+            amountBN.toString(),
+            toToken.decimals,
+            fromChainId,
+            toChainId
+          );
+        } else {
+          // Same-chain swap: compare 0x + LIFI
+          const effectiveChain = chain === 'BRG' 
+            ? (fromChainId === 1 ? 'ETH' : 'POL') 
+            : chain;
+          result = await getBestQuote(
+            fromToken.address,
+            toToken.address,
+            amountBN.toString(),
+            fromToken.decimals,
+            toToken.decimals,
+            slippage,
+            effectiveChain
+          );
+        }
 
         if (result) {
           setQuote(result);
@@ -467,13 +517,14 @@ export default function Home() {
     !insufficientFunds;
 
   const getButtonText = () => {
-    if (!isConnected) return 'Connect Wallet to Swap';
+    const action = isBridgeMode ? 'Bridge' : 'Swap';
+    if (!isConnected) return `Connect Wallet to ${action}`;
     if (!fromToken || !toToken) return 'Select Tokens';
     if (!fromAmount || parseFloat(fromAmount) <= 0) return 'Enter Amount';
     if (insufficientFunds) return `Insufficient ${fromToken?.symbol || ''} Balance`;
     if (isSwapping) return swapStep || 'Processing...';
-    if (!quote) return 'Finding Best Price...';
-    return `Swap ${fromToken?.symbol || ''} for ${toToken?.symbol || ''}`;
+    if (!quote) return `Finding Best ${isBridgeMode ? 'Bridge' : 'Price'}...`;
+    return `${action} ${fromToken?.symbol || ''} for ${toToken?.symbol || ''}`;
   };
   
   const getButtonStyle = () => {
@@ -603,7 +654,10 @@ export default function Home() {
             }}
             data-testid="text-quote-source"
           >
-            Best price via {quote.source === '0x' ? '0x Protocol' : '1inch'} on {chain}
+            {isBridgeMode 
+              ? `Bridge via LIFI (${getTokenChainId(fromToken) === 1 ? 'ETH' : 'POL'} → ${getTokenChainId(toToken) === 1 ? 'ETH' : 'POL'})`
+              : `Best price via ${quote.source === '0x' ? '0x Protocol' : 'LIFI'} on ${chain === 'BRG' ? (getTokenChainId(fromToken) === 1 ? 'ETH' : 'POL') : chain}`
+            }
           </div>
         )}
 
