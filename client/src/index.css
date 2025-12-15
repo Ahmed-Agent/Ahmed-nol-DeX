@@ -195,7 +195,7 @@ body::before {
   margin: 0 auto;
   pointer-events: none;
   animation: logoRotate 8s ease-in-out infinite alternate;
-  z-index: 998;
+  z-index: 50;
   position: fixed;
   left: 50%;
   top: 6vh;
@@ -1088,31 +1088,49 @@ body.eth-chain .glassy-btn.connected {
 /* Extra small screens (320px - 375px) */
 @media (max-width: 375px) {
   .glass-card {
-    padding: 16px;
+    padding: 14px;
+    width: 95% !important;
   }
 
   .input-box {
     padding: 6px 8px;
     gap: 6px;
   }
+  
+  .input-box input {
+    font-size: 12px !important;
+    padding: 6px 8px !important;
+  }
 
   .token-icon {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
   }
 
   .glassy-btn {
-    padding: 8px 14px;
-    font-size: 13px;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  
+  .glassy-btn .label {
+    font-size: 11px;
   }
 
   .quick-cta {
     padding: 8px 12px;
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .dex-heading {
-    font-size: 20px;
+    font-size: 18px;
+  }
+  
+  .price-small {
+    min-width: 80px;
+  }
+  
+  .price-usd, .price-unit {
+    font-size: 10px;
   }
 
   .footer {

@@ -50,7 +50,14 @@ export function ChatPanel() {
       loadMessages();
 
       // Real-time subscription for instant updates
-      const unsubscribe = subscribeToMessages((newMessage) => {
+      const unsubscribe = subscribeToMessages((payload) => {
+        // Map payload to Message format
+        const newMessage = {
+          id: payload.id,
+          username: payload.user,
+          message: payload.text,
+          created_at: payload.created_at
+        };
         setMessages((prev) => {
           if (prev.some((m) => m.id === newMessage.id)) return prev;
           return [...prev, newMessage];

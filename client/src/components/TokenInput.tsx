@@ -116,7 +116,20 @@ export function TokenInput({
       }
 
       allResults.sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0));
-      setSuggestions(allResults.slice(0, 15));
+      
+      // Deduplicate: In non-BRG mode, keep one per symbol. In BRG mode, allow same symbol if different chains
+      const seen = new Map<string, number>();
+      const deduplicated = allResults.filter(item => {
+        const tokenChainId = (item.token as ExtendedToken).chainId || 0;
+        const key = chain === 'BRG' 
+          ? `${item.token.symbol.toLowerCase()}-${tokenChainId}` 
+          : item.token.symbol.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.set(key, tokenChainId);
+        return true;
+      });
+      
+      setSuggestions(deduplicated.slice(0, 15));
       setShowSuggestions(true);
     } finally {
       setLoading(false);
