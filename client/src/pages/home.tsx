@@ -9,6 +9,7 @@ import { Token, loadTokensAndMarkets, loadTokensForChain, getTokenPriceUSD, getT
 import { getBestQuote, getLifiBridgeQuote, executeSwap, approveToken, checkAllowance, parseSwapError, QuoteResult } from '@/lib/swapService';
 import { config, ethereumConfig, low, isAddress } from '@/lib/config';
 import { useChain, ChainType, chainConfigs } from '@/lib/chainContext';
+import { useTokenSelection } from '@/lib/tokenSelectionContext';
 
 interface ExtendedToken extends Token {
   chainId?: number;
@@ -26,11 +27,6 @@ const POLYGON_DEFAULTS = {
   toToken: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', // WETH (verified Polygon)
 };
 
-// Fee configuration
-const FEE_CONFIG = {
-  ETH: { feeUsd: 1.2, feeToken: 'ETH' },
-  POL: { feePercent: 0.00001, feeToken: 'MATIC' },
-};
 
 // Native token addresses (both zero address and 0x standard 0xEeee...)
 const NATIVE_ADDRESSES = [
@@ -50,6 +46,7 @@ export default function Home() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { chain, chainConfig, setChain, onChainChange } = useChain();
+  const { selectedFromToken, clearSelection, selectionVersion } = useTokenSelection();
   const [location] = useLocation();
 
   const [fromToken, setFromToken] = useState<ExtendedToken | null>(null);
@@ -276,6 +273,15 @@ export default function Home() {
   useEffect(() => {
     fetchPrices();
   }, [fetchPrices]);
+
+  // Listen for token selection from main search bar
+  useEffect(() => {
+    if (selectedFromToken && selectionVersion > 0) {
+      setFromToken(selectedFromToken as ExtendedToken);
+      showToast(`Selected ${selectedFromToken.symbol} as FROM token`, { type: 'success', ttl: 2000 });
+      clearSelection();
+    }
+  }, [selectedFromToken, selectionVersion, clearSelection]);
 
   // Price-based estimate
   useEffect(() => {
@@ -661,18 +667,6 @@ export default function Home() {
           </div>
         )}
 
-        {chain === 'ETH' && (
-          <div
-            style={{
-              textAlign: 'center',
-              marginTop: '8px',
-              fontSize: '11px',
-              opacity: 0.6,
-            }}
-          >
-            Fee: ~$1.20 (paid in ETH)
-          </div>
-        )}
       </div>
     </div>
   );

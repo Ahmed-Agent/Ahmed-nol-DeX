@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Token, TokenStats, searchTokens, getTopTokens, getPlaceholderImage, getCgStatsMap, getTokenByAddress } from '@/lib/tokenService';
 import { formatUSD, low, isAddress } from '@/lib/config';
 import { useChain } from '@/lib/chainContext';
+import { useTokenSelection } from '@/lib/tokenSelectionContext';
 
 interface ExtendedToken extends Token {
   chainId?: number;
@@ -14,6 +15,7 @@ interface TokenSearchBarProps {
 
 export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
   const { chain } = useChain();
+  const { selectFromToken } = useTokenSelection();
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<{ token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }; stats: TokenStats | null; price: number | null }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -124,6 +126,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
   };
 
   const handleSelectToken = (token: Token) => {
+    selectFromToken(token);
     if (onTokenSelect) {
       onTokenSelect(token);
     }
@@ -141,10 +144,14 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
 
     if (showSuggestions) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.body.style.overflow = '';
     };
   }, [showSuggestions]);
 

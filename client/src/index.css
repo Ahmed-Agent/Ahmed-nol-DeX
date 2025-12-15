@@ -195,7 +195,7 @@ body::before {
   margin: 0 auto;
   pointer-events: none;
   animation: logoRotate 8s ease-in-out infinite alternate;
-  z-index: 50;
+  z-index: 55;
   position: fixed;
   left: 50%;
   top: 6vh;
@@ -962,12 +962,12 @@ body.eth-chain .glassy-btn.connected {
 /* ===== TOKEN SEARCH BAR =================== */
 .token-search-bar-container {
   position: fixed;
-  top: calc(8vh + 100px + 19px);
+  top: calc(6vh + 84px + 16px);
   left: 50%;
   transform: translateX(-50%);
   width: 90%;
   max-width: 500px;
-  z-index: 60;
+  z-index: 55;
   pointer-events: auto;
 }
 
@@ -1058,9 +1058,8 @@ body.eth-chain .glassy-btn.connected {
   }
 
   .token-search-bar-container {
-    transform: translate(-50%, -95px);
+    top: calc(4vh + 68px + 12px);
     width: 92%;
-    top: calc(6vh + 100px);
   }
 
   .price-ticker-container {

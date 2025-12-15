@@ -187,10 +187,14 @@ export function TokenInput({
 
     if (showSuggestions) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.body.style.overflow = '';
     };
   }, [showSuggestions]);
 
@@ -251,11 +255,6 @@ export function TokenInput({
             />
           ) : (
             <img src={getPlaceholderImage()} alt="Select token" />
-          )}
-          {selectedToken && (
-            <span className="token-chip" data-testid={`chip-token-${side}`}>
-              {selectedToken.symbol}
-            </span>
           )}
         </div>
 
