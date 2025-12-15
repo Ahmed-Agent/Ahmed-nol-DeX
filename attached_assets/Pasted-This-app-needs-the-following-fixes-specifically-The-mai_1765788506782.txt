@@ -1,0 +1,30 @@
+This app needs the following fixes specifically:
+
++The main search bar should not be in (higher or lower) layer from "floating rotating logo " 
+they should at the same layer,  but always the search bar is below ⬇️ and logo ⬆️ is above, with respected gap.
+
++when user choose a new token from the main search bar,  it should replace the one in from input 
+
++Remove the themed ticker from the selected icons in (from/to) , keep only the input ticker referring to the current token always. Remove text normalization,  and make the normalization of the text refer to the current token. 
+
++Run logs on the following checking and fix :
+Swap in Polygon or Ethereum modes uses "LIFI and 0x" as resorces.
+Swap in BRG modes uses both "LIFI and 0x" as resources 
+Bridging in BRG mode uses "LIFI" as resource
+Both swap and bridging are fully working 100% no doubts.
+Themed and smooth guidlines are applied , encountering variations of issues eg: no enough funds.
+
++Make sure the connect wallet logic is fully working,  and it connects the both chains at once , no need to reconnect while switching chains in the website, 
+User have consistent connection because the user already connected to the both POL/ETH  chains.
+
+
++Add 3-5 steps GUIDELINES for welcoming new users,  themed exactly 100% like our app, very small frendly and SKIP  is a choice 
+first is welcome and introduction of ability to swap and bridge in eth and pol chains , 
+Second guideline introducing the user to the switch chain button by adhering our 3 modes, 
+3rd giude line introducing about public chat and the iframe button "SNAP⚡" which is for quick market overview. End by telling users 75% of the exchange fees will go to $nol liquidity and also mention that they are responsible for their trades we are just professional aggregators . Also tell the in estimate feild not always accurate,  users needs to get qouts to find the real aggregation .Warn them freindly
+
++REMOVE IN ADDITIONAL FEES (1.2$ in eth and 0.01moatic) remove the whole additional fees logics. Keep only pure swap,bridging ,allowance, approvals, transactions codes, withno extra fees
+
++remove page scroll when lists,search,suggestions are open. To enhance user experience scrolling the suggestions.
+
+Run logs in check any other fixes or features enhances 
