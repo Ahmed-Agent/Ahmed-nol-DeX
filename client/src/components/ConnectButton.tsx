@@ -64,7 +64,7 @@ export function ConnectButton() {
 
         <button
           onClick={handleConnect}
-          className={`glassy-btn ${isConnected ? 'connected' : ''}`}
+          className={`glassy-btn connect-wallet-btn ${isConnected ? 'connected' : ''}`}
           style={{
             background: isConnected 
               ? 'linear-gradient(90deg, var(--accent-1), var(--accent-2))'
@@ -76,8 +76,8 @@ export function ConnectButton() {
           }}
           data-testid="button-connect-wallet"
         >
-          <span style={{ marginRight: '8px' }}>{isConnected ? '🔗' : '🔌'}</span>
-          <span>{isConnected ? 'Disconnect' : 'Connect Wallet'}</span>
+          <span className="wallet-icon">{isConnected ? '🔗' : '🔌'}</span>
+          <span className="wallet-text">{isConnected ? 'Disconnect' : 'Connect Wallet'}</span>
         </button>
       </div>
 

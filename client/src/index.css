@@ -522,6 +522,8 @@ body.eth-chain .glassy-btn.connected {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+  max-width: calc(100vw - 36px);
 }
 
 .addr-chip {
@@ -529,6 +531,29 @@ body.eth-chain .glassy-btn.connected {
   border-radius: 12px;
   background: rgba(255,255,255,0.03);
   font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.connect-wallet-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.connect-wallet-btn .wallet-icon {
+  display: inline-flex;
+  margin: 0;
+}
+
+.connect-wallet-btn .wallet-text {
+  display: inline;
 }
 
 /* ===== CHAT PANEL ===== */
@@ -680,6 +705,49 @@ body.eth-chain .glassy-btn.connected {
   padding: 10px !important;
 }
 
+@media (max-width: 640px) {
+  .top-right-connect {
+    right: 12px;
+    top: 12px;
+    gap: 8px;
+  }
+
+  .addr-chip {
+    padding: 6px 10px;
+    font-size: 11px;
+    max-width: 100px;
+  }
+
+  .connect-wallet-btn {
+    padding: 8px 12px;
+    font-size: 12px;
+    gap: 4px;
+  }
+
+  .connect-wallet-btn .wallet-text {
+    max-width: 85px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .glass-card {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .input-box {
+    padding: 6px 8px;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .token-icon {
+    width: 32px;
+    height: 32px;
+  }
+}
+
 @media (max-width: 428px) {
   .chat-toggle {
     right: 12px;
@@ -693,6 +761,55 @@ body.eth-chain .glassy-btn.connected {
     border-radius: 20px 0 0 0;
     top: 10%;
     height: 75%;
+  }
+
+  .top-right-connect {
+    right: 10px;
+    top: 10px;
+    gap: 6px;
+  }
+
+  .addr-chip {
+    padding: 5px 8px;
+    font-size: 10px;
+    max-width: 80px;
+  }
+
+  .connect-wallet-btn {
+    padding: 7px 10px;
+    font-size: 11px;
+    gap: 3px;
+    min-height: 40px;
+  }
+
+  .connect-wallet-btn .wallet-text {
+    max-width: 65px;
+  }
+
+  .glass-card {
+    padding: 14px;
+  }
+
+  .input-box {
+    padding: 5px 7px;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .token-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .dex-heading {
+    font-size: 22px;
+    margin-bottom: 12px;
+  }
+
+  .suggestion-price-pill {
+    min-width: 60px;
+    padding: 4px 6px;
+    font-size: 11px;
   }
 }
 
