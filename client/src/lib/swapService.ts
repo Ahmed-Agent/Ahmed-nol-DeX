@@ -37,13 +37,14 @@ async function fetch0xQuote(
   fromAddr: string,
   toAddr: string,
   sellAmount: string,
+  walletAddress: string,
   chain: ChainType = 'POL'
 ): Promise<QuoteResult | null> {
   try {
     // Use server proxy for 0x API calls (handles API keys server-side)
     const proxyBase = chain === 'ETH' ? '/api/proxy/0x-eth' : '/api/proxy/0x';
-    const url = `${proxyBase}/swap/v1/quote?sellToken=${encodeURIComponent(fromAddr)}&buyToken=${encodeURIComponent(toAddr)}&sellAmount=${sellAmount}`;
-    console.log(`[0x Quote] Fetching quote: ${chain} | ${fromAddr} -> ${toAddr} | Amount: ${sellAmount}`);
+    const url = `${proxyBase}/swap/v1/quote?sellToken=${encodeURIComponent(fromAddr)}&buyToken=${encodeURIComponent(toAddr)}&sellAmount=${sellAmount}&takerAddress=${walletAddress}`;
+    console.log(`[0x Quote] Fetching quote: ${chain} | ${fromAddr} -> ${toAddr} | Amount: ${sellAmount} | Taker: ${walletAddress}`);
     
     const resp = await fetchWithTimeout(url, {}, 5000);
     if (!resp.ok) {
@@ -76,12 +77,13 @@ async function fetchLifiQuote(
   sellAmount: string,
   toDecimals: number,
   fromChainId: number,
-  toChainId: number
+  toChainId: number,
+  walletAddress: string
 ): Promise<QuoteResult | null> {
   try {
     const isBridge = fromChainId !== toChainId;
-    const url = `/api/proxy/lifi/quote?fromChain=${fromChainId}&toChain=${toChainId}&fromToken=${encodeURIComponent(fromAddr)}&toToken=${encodeURIComponent(toAddr)}&fromAmount=${sellAmount}`;
-    console.log(`[LIFI Quote] Fetching ${isBridge ? 'bridge' : 'swap'} quote: chain ${fromChainId} -> ${toChainId}`);
+    const url = `/api/proxy/lifi/quote?fromChain=${fromChainId}&toChain=${toChainId}&fromToken=${encodeURIComponent(fromAddr)}&toToken=${encodeURIComponent(toAddr)}&fromAmount=${sellAmount}&fromAddress=${walletAddress}`;
+    console.log(`[LIFI Quote] Fetching ${isBridge ? 'bridge' : 'swap'} quote: chain ${fromChainId} -> ${toChainId} | From: ${walletAddress}`);
     
     const resp = await fetchWithTimeout(url, {}, 8000);
     if (!resp.ok) {
@@ -115,9 +117,10 @@ export async function getLifiBridgeQuote(
   amountWei: string,
   toDecimals: number,
   fromChainId: number,
-  toChainId: number
+  toChainId: number,
+  walletAddress: string
 ): Promise<QuoteResult | null> {
-  return fetchLifiQuote(fromAddr, toAddr, amountWei, toDecimals, fromChainId, toChainId);
+  return fetchLifiQuote(fromAddr, toAddr, amountWei, toDecimals, fromChainId, toChainId, walletAddress);
 }
 
 export async function getBestQuote(
@@ -127,6 +130,7 @@ export async function getBestQuote(
   fromDecimals: number,
   toDecimals: number,
   slippage: number,
+  walletAddress: string,
   chain: ChainType = 'POL'
 ): Promise<QuoteResult | null> {
   const key = makeQuoteKey(fromAddr, toAddr, amountWei, slippage, chain);
@@ -142,8 +146,8 @@ export async function getBestQuote(
   
   // Fetch with timeout fallback: try both sources in parallel, accept first valid response
   const [q0x, qLifi] = await Promise.all([
-    fetch0xQuote(fromAddr, toAddr, amountWei, chain),
-    fetchLifiQuote(fromAddr, toAddr, amountWei, toDecimals, chainId, chainId),
+    fetch0xQuote(fromAddr, toAddr, amountWei, walletAddress, chain),
+    fetchLifiQuote(fromAddr, toAddr, amountWei, toDecimals, chainId, chainId, walletAddress),
   ]);
 
   const quotes = [q0x, qLifi].filter(Boolean) as QuoteResult[];

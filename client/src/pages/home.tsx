@@ -339,7 +339,8 @@ export default function Home() {
             amountBN.toString(),
             toToken.decimals,
             fromChainId,
-            toChainId
+            toChainId,
+            address || '0x0000000000000000000000000000000000000000'
           );
         } else {
           // Same-chain swap: compare 0x + LIFI
@@ -353,6 +354,7 @@ export default function Home() {
             fromToken.decimals,
             toToken.decimals,
             slippage,
+            address || '0x0000000000000000000000000000000000000000',
             effectiveChain
           );
         }
