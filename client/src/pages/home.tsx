@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useAccount, useChainId, useBalance } from 'wagmi';
+import { useAccount, useChainId, useBalance, useSwitchChain } from 'wagmi';
 import { ethers } from 'ethers';
 import { useLocation } from 'wouter';
 import { TokenInput } from '@/components/TokenInput';
@@ -46,6 +46,7 @@ const isNativeToken = (address: string) => {
 export default function Home() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
   const { chain, chainConfig, setChain, onChainChange } = useChain();
   const { selectedFromToken, clearSelection, selectionVersion } = useTokenSelection();
   const [location] = useLocation();
@@ -246,6 +247,19 @@ export default function Home() {
       setDefaultTokensForChain(chain);
     });
   }, []);
+
+  // Auto-switch wallet chain when user changes chains in UI (except BRG mode)
+  useEffect(() => {
+    if (isConnected && switchChain) {
+      if (chain === 'ETH' && chainId !== 1) {
+        console.log('[Wallet] Auto-switching wallet to Ethereum (chain 1)');
+        switchChain({ chainId: 1 });
+      } else if (chain === 'POL' && chainId !== 137) {
+        console.log('[Wallet] Auto-switching wallet to Polygon (chain 137)');
+        switchChain({ chainId: 137 });
+      }
+    }
+  }, [chain, chainId, isConnected, switchChain]);
 
   useEffect(() => {
     const unsubscribe = onChainChange((newChain: ChainType) => {

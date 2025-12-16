@@ -31,7 +31,7 @@ export function TokenInput({
   const { chain } = useChain();
   const chainId = chain === 'ETH' ? 1 : chain === 'POL' ? 137 : 0;
   
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(selectedToken ? selectedToken.symbol.toUpperCase() : '');
   const [suggestions, setSuggestions] = useState<{ token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }; stats: TokenStats | null; price: number | null }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
