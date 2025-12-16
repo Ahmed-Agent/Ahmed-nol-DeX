@@ -166,27 +166,15 @@ export function TokenInput({
   const handleBlur = () => {
     setTimeout(() => {
       setShowSuggestions(false);
-      // Always normalize to the currently selected token's symbol on blur
-      if (selectedToken) {
-        setSearchQuery(selectedToken.symbol);
-      } else {
-        setSearchQuery('');
-      }
     }, 200);
   };
 
   const handleSelectToken = (token: Token) => {
     onTokenSelect(token);
-    setSearchQuery(token.symbol);
+    setSearchQuery('');
     setShowSuggestions(false);
     inputRef.current?.blur();
   };
-
-  useEffect(() => {
-    if (selectedToken) {
-      setSearchQuery(selectedToken.symbol);
-    }
-  }, [selectedToken]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
