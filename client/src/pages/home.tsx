@@ -246,24 +246,36 @@ export default function Home() {
   useEffect(() => {
     const unsubscribe = onChainChange((newChain: ChainType) => {
       if (previousChainRef.current !== newChain) {
-        console.log(`[ChainSwitch] Switching from ${previousChainRef.current} to ${newChain}`);
+        const prevChain = previousChainRef.current;
+        console.log(`[ChainSwitch] Switching from ${prevChain} to ${newChain}`);
         previousChainRef.current = newChain;
         
-        // Clear all state on chain switch
-        setFromAmount('');
-        setToAmount('');
-        setQuote(null);
-        setFromPriceUsd(null);
-        setToPriceUsd(null);
-        setInsufficientFunds(false);
-        setUserBalance(null);
-        setFromToken(null);
-        setToToken(null);
+        // For BRG mode, preserve user's token selections; for other modes, reset
+        const isBrgMode = newChain === 'BRG' && prevChain !== 'BRG';
         
-        // Load new default tokens for the chain
-        setDefaultTokensForChain(newChain).then(() => {
-          console.log(`[ChainSwitch] Default tokens loaded for ${newChain}`);
-        });
+        if (!isBrgMode) {
+          // Clear all state on non-BRG chain switch
+          setFromAmount('');
+          setToAmount('');
+          setQuote(null);
+          setFromPriceUsd(null);
+          setToPriceUsd(null);
+          setInsufficientFunds(false);
+          setUserBalance(null);
+          setFromToken(null);
+          setToToken(null);
+          
+          // Load new default tokens for the chain
+          setDefaultTokensForChain(newChain).then(() => {
+            console.log(`[ChainSwitch] Default tokens loaded for ${newChain}`);
+          });
+        } else {
+          // BRG mode: keep token selections, just clear quotes and amounts
+          setFromAmount('');
+          setToAmount('');
+          setQuote(null);
+          console.log(`[ChainSwitch] Entered BRG mode, preserving token selections`);
+        }
       }
     });
     

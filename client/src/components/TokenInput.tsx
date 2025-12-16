@@ -253,18 +253,36 @@ export function TokenInput({
   return (
     <div className="input-box" style={{ position: 'relative' }} ref={containerRef} data-testid={`input-box-${side}`}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-        <div className="token-icon" style={{ position: 'relative' }}>
-          {selectedToken?.logoURI ? (
-            <img
-              src={selectedToken.logoURI}
-              alt={selectedToken.symbol}
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = getPlaceholderImage();
-              }}
-              data-testid={`img-token-${side}`}
-            />
-          ) : (
-            <img src={getPlaceholderImage()} alt="Select token" />
+        {/* Uniswap-style ticker chip: icon + symbol together */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '4px 8px',
+          borderRadius: '8px',
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          flexShrink: 0,
+          minWidth: selectedToken ? 'auto' : 0,
+        }}>
+          <div className="token-icon" style={{ position: 'relative', width: '28px', height: '28px' }}>
+            {selectedToken?.logoURI ? (
+              <img
+                src={selectedToken.logoURI}
+                alt={selectedToken.symbol}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = getPlaceholderImage();
+                }}
+                data-testid={`img-token-${side}`}
+              />
+            ) : (
+              <img src={getPlaceholderImage()} alt="Select token" />
+            )}
+          </div>
+          {selectedToken && (
+            <span style={{ fontSize: '13px', fontWeight: 700, minWidth: 'auto' }}>
+              {selectedToken.symbol}
+            </span>
           )}
         </div>
 
@@ -282,7 +300,7 @@ export function TokenInput({
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
           <input
             ref={inputRef}
             type="text"

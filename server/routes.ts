@@ -79,7 +79,7 @@ function rateLimitMiddleware(req: Request, res: Response, next: () => void): voi
   next();
 }
 
-// Get API keys from environment
+// Get API keys from environment (server-side only, protected from frontend)
 function getCoingeckoApiKey(): string {
   return process.env.COINGECKO || process.env.VITE_COINGECKO_API_KEY || '';
 }
@@ -94,6 +94,20 @@ function getZeroXApiKey(): string {
 
 function getLifiApiKey(): string {
   return process.env.VITE_LIFI_API_KEY || '';
+}
+
+// Get new multi-chain API key (protected on server)
+function getEthPolApiKey(): string {
+  return process.env.VITE_ETH_POL_API || '';
+}
+
+// Get RPC URLs (protected on server)
+function getEthRpcUrl(): string {
+  return process.env.VITE_ETH_RPC_URL || 'https://eth.llamarpc.com';
+}
+
+function getPolRpcUrl(): string {
+  return process.env.VITE_POL_RPC_URL || 'https://polygon-rpc.com';
 }
 
 // Alternating source for token prices

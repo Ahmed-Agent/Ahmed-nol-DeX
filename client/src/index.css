@@ -204,8 +204,8 @@ body::before {
 }
 
 @keyframes logoRotate {
-  0% { transform: translateX(-50%) rotateY(-80deg); }
-  100% { transform: translateX(-50%) rotateY(80deg); }
+  0% { transform: translateX(-50%) rotateY(-60deg); }
+  100% { transform: translateX(-50%) rotateY(60deg); }
 }
 
 /* ===== CARD ENTRANCE ANIMATION ===== */
