@@ -678,17 +678,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Token Info Sidebar */}
-        {(fromToken || toToken) && (
-          <TokenInfoSidebar
-            fromToken={fromToken}
-            toToken={toToken}
-            fromPriceUsd={fromPriceUsd}
-            toPriceUsd={toPriceUsd}
-            fromChange24h={fromToken ? getCgStatsMap(chainId).get(fromToken.symbol.toLowerCase())?.change : null}
-            toChange24h={toToken ? getCgStatsMap(chainId).get(toToken.symbol.toLowerCase())?.change : null}
-          />
-        )}
 
         <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'center' }}>
           <button

@@ -12,6 +12,7 @@ import { ConnectButton } from '@/components/ConnectButton';
 import { SwitchChainButton } from '@/components/SwitchChainButton';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ToolsButton } from '@/components/ToolsButton';
+import { TokenInfoSidebar } from '@/components/TokenInfoSidebar';
 import { Footer } from '@/components/Footer';
 import { ToastContainer } from '@/components/Toast';
 import { CookiesPopup } from '@/components/CookiesPopup';
@@ -43,6 +44,7 @@ function App() {
             <OnboardingGuide />
             <Router />
             <ChatPanel />
+            <TokenInfoSidebar fromToken={null} toToken={null} fromPriceUsd={null} toPriceUsd={null} />
             <ToolsButton />
             <Footer />
             <ToastContainer />

@@ -1332,6 +1332,118 @@ body.eth-chain .glassy-btn.connected {
   }
 }
 
+/* ===== TOKEN INFO BUTTON & SIDEBAR ===== */
+.token-info-button {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  cursor: pointer;
+  color: #fff;
+  transition: all 0.3s ease;
+  z-index: 40;
+}
+
+.token-info-button:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.2);
+  box-shadow: 0 0 15px rgba(180,68,255,0.2);
+}
+
+.token-info-text {
+  position: absolute;
+  bottom: -24px;
+  left: 0;
+  font-size: 10px;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.token-info-container {
+  position: fixed;
+  bottom: 80px;
+  left: 20px;
+  width: 280px;
+  padding: 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  z-index: 39;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.token-info-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.token-info-row:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.token-info-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.token-info-header img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.token-symbol {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.token-name {
+  font-size: 9px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.token-info-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.stat-label {
+  opacity: 0.6;
+  margin-bottom: 2px;
+}
+
+.stat-value {
+  font-weight: 700;
+  font-size: 11px;
+}
+
 /* ===== FOCUS STATES ===== */
 button:focus-visible,
 .glassy-btn:focus-visible,
