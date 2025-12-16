@@ -130,7 +130,7 @@ export function TokenInfoSidebar({
 
   return (
     <>
-      {/* Button - Mini Radar with Radar Icon */}
+      {/* Button - Mini Radar with Custom Radar Icon */}
       <div
         ref={buttonRef}
         className="token-info-button"
@@ -138,7 +138,15 @@ export function TokenInfoSidebar({
         style={{ opacity: hasTokens ? 1 : 0.5, cursor: hasTokens ? 'pointer' : 'not-allowed' }}
         data-testid="button-token-info"
       >
-        <span style={{ fontSize: '20px', lineHeight: '1' }}>📟</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="9" opacity="0.5"/>
+          <circle cx="12" cy="12" r="6" opacity="0.7"/>
+          <circle cx="12" cy="12" r="3" opacity="0.9"/>
+          <line x1="12" y1="3" x2="12" y2="1"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="3" y1="12" x2="1" y2="12"/>
+        </svg>
         <div className="token-info-text">{isOpen ? 'Hide' : 'Mini Radar'}</div>
       </div>
 
