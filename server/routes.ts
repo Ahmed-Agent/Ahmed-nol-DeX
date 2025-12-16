@@ -55,11 +55,13 @@ function checkRateLimit(ip: string): boolean {
 // Clean up old rate limit entries periodically
 setInterval(() => {
   const now = Date.now();
+  const entriesToDelete: string[] = [];
   for (const [ip, entry] of rateLimits.entries()) {
     if (now > entry.resetTime) {
-      rateLimits.delete(ip);
+      entriesToDelete.push(ip);
     }
   }
+  entriesToDelete.forEach(ip => rateLimits.delete(ip));
 }, 60000);
 
 // Get client IP

@@ -84,11 +84,14 @@ export default function Home() {
   };
 
   // Get user balance for from token (use token's chainId in BRG mode)
-  const fromTokenChainId = fromToken ? getTokenChainId(fromToken) : (chain === 'ETH' ? 1 : 137);
+  const fromTokenChainId = (() => {
+    const chainIdVal = fromToken ? getTokenChainId(fromToken) : (chain === 'ETH' ? 1 : 137);
+    return (chainIdVal === 1 || chainIdVal === 137) ? chainIdVal : 137;
+  })();
   
   const { data: nativeBalance } = useBalance({
     address: address,
-    chainId: fromTokenChainId,
+    chainId: fromTokenChainId as 1 | 137,
   });
 
   const { data: tokenBalance } = useBalance({
@@ -96,7 +99,7 @@ export default function Home() {
     token: fromToken && !isNativeToken(fromToken.address)
       ? fromToken.address as `0x${string}` 
       : undefined,
-    chainId: fromTokenChainId,
+    chainId: fromTokenChainId as 1 | 137,
   });
 
   // Check balance and set insufficient funds state
