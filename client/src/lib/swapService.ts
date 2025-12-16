@@ -201,35 +201,59 @@ export async function executeSwap(
 
   if (quote.source === '0x') {
     const data = quote.data;
-    if (!data || !data.to || !data.data) {
-      throw new Error('Invalid 0x quote data');
+    console.log('[executeSwap] 0x quote data:', JSON.stringify(data, null, 2));
+    
+    if (!data) {
+      throw new Error('0x quote returned no data');
+    }
+    if (!data.to || typeof data.to !== 'string') {
+      throw new Error(`0x quote missing or invalid 'to' address: ${data.to}`);
+    }
+    if (!data.data || typeof data.data !== 'string') {
+      throw new Error(`0x quote missing or invalid 'data' field: ${data.data}`);
     }
 
     const tx: ethers.providers.TransactionRequest = {
       to: data.to,
       data: data.data,
-      value: data.value ? ethers.BigNumber.from(data.value) : undefined,
+      value: data.value ? ethers.BigNumber.from(data.value) : ethers.BigNumber.from('0'),
       gasLimit: data.gas ? ethers.BigNumber.from(data.gas).mul(120).div(100) : undefined,
     };
-
+    
+    console.log('[executeSwap] 0x transaction:', JSON.stringify(tx, null, 2));
     return await signer.sendTransaction(tx);
   } else if (quote.source === 'lifi') {
     const data = quote.data;
-    if (!data || !data.transactionRequest) {
-      throw new Error('Invalid LIFI quote data');
+    console.log('[executeSwap] LIFI quote data:', JSON.stringify(data, null, 2));
+    
+    if (!data) {
+      throw new Error('LIFI quote returned no data');
     }
+    if (!data.transactionRequest) {
+      throw new Error('LIFI quote missing transactionRequest');
+    }
+    
     const txReq = data.transactionRequest;
+    if (!txReq.to || typeof txReq.to !== 'string') {
+      throw new Error(`LIFI transactionRequest missing or invalid 'to': ${txReq.to}`);
+    }
+    if (!txReq.data || typeof txReq.data !== 'string') {
+      throw new Error(`LIFI transactionRequest missing or invalid 'data': ${txReq.data}`);
+    }
+
     const tx: ethers.providers.TransactionRequest = {
       to: txReq.to,
       data: txReq.data,
-      value: txReq.value ? ethers.BigNumber.from(txReq.value) : undefined,
+      value: txReq.value ? ethers.BigNumber.from(txReq.value) : ethers.BigNumber.from('0'),
       gasLimit: txReq.gasLimit ? ethers.BigNumber.from(txReq.gasLimit).mul(120).div(100) : undefined,
+      from: userAddress,
     };
-
+    
+    console.log('[executeSwap] LIFI transaction:', JSON.stringify(tx, null, 2));
     return await signer.sendTransaction(tx);
   }
 
-  return null;
+  throw new Error(`Unknown quote source: ${quote.source}`);
 }
 
 export async function approveToken(
