@@ -124,8 +124,70 @@ function getPublicRpcConfig() {
   };
 }
 
-// Alternating source for token prices
+// Alternating source for token prices (2-minute sequence)
 let lastPriceSource: 'cmc' | 'coingecko' = 'cmc';
+let lastSourceSwitch = Date.now();
+const SOURCE_SWITCH_INTERVAL = 2 * 60 * 1000; // 2 minutes
+
+// Background price cache for secondary sources
+interface BackgroundPrice {
+  price: number;
+  source: string;
+  timestamp: number;
+}
+const backgroundPriceCache = new Map<string, BackgroundPrice>();
+
+// Non-blocking background fetch from secondary sources
+function fetchBackgroundSecondaryPrices(tokenAddresses: string[]): void {
+  if (!tokenAddresses.length) return;
+  
+  // Fire and forget - don't block the response
+  setImmediate(async () => {
+    for (const addr of tokenAddresses.slice(0, 20)) { // Limit to 20 per batch
+      try {
+        // Try 0x (fastest for DEX prices)
+        const zeroXKey = getZeroXApiKey();
+        if (zeroXKey) {
+          const resp = await fetch(
+            `https://polygon.api.0x.org/swap/v1/price?sellToken=${addr}&buyToken=${process.env.VITE_USDC_ADDR || '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'}&sellAmount=1`,
+            { 
+              headers: { '0x-api-key': zeroXKey },
+              signal: AbortSignal.timeout(2000)
+            }
+          ).catch(() => null);
+          
+          if (resp?.ok) {
+            const data = await resp.json();
+            if (data.price) {
+              const price = Number(data.price);
+              if (price > 0) {
+                backgroundPriceCache.set(`0x:${addr}`, { price, source: '0x', timestamp: Date.now() });
+              }
+            }
+          }
+        }
+        
+        // Try DexScreener (reliable for any token)
+        const dexResp = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addr}`, {
+          signal: AbortSignal.timeout(2000)
+        }).catch(() => null);
+        
+        if (dexResp?.ok) {
+          const data = await dexResp.json();
+          const pairs = data?.pairs || [];
+          if (pairs[0]?.priceUsd) {
+            const price = Number(pairs[0].priceUsd);
+            if (price > 0) {
+              backgroundPriceCache.set(`dex:${addr}`, { price, source: 'dexscreener', timestamp: Date.now() });
+            }
+          }
+        }
+      } catch (e) {
+        // Silent fail - background operation
+      }
+    }
+  });
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -165,7 +227,7 @@ export async function registerRoutes(
     });
   });
 
-  // GET /api/prices/tokens - Proxies token data with alternating sources
+  // GET /api/prices/tokens - Proxies token data with 2-min sequence alternation + background loading
   app.get("/api/prices/tokens", rateLimitMiddleware, async (req, res) => {
     try {
       const cacheKey = 'prices_tokens';
@@ -174,8 +236,13 @@ export async function registerRoutes(
         return res.json(cached);
       }
 
-      // Alternate between CMC and CoinGecko
-      lastPriceSource = lastPriceSource === 'cmc' ? 'coingecko' : 'cmc';
+      // 2-minute sequence alternation
+      const now = Date.now();
+      if (now - lastSourceSwitch >= SOURCE_SWITCH_INTERVAL) {
+        lastPriceSource = lastPriceSource === 'cmc' ? 'coingecko' : 'cmc';
+        lastSourceSwitch = now;
+        console.log(`[2-min sequence] Switched to: ${lastPriceSource}`);
+      }
       
       let data: unknown = null;
       let source = lastPriceSource;
@@ -190,6 +257,7 @@ export async function registerRoutes(
                 'X-CMC_PRO_API_KEY': getCmcApiKey(),
                 'Accept': 'application/json',
               },
+              signal: AbortSignal.timeout(5000)
             }
           );
           if (response.ok) {
@@ -210,7 +278,10 @@ export async function registerRoutes(
           }
           const response = await fetch(
             `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1`,
-            { headers }
+            { 
+              headers,
+              signal: AbortSignal.timeout(5000)
+            }
           );
           if (response.ok) {
             data = await response.json();
@@ -231,6 +302,7 @@ export async function registerRoutes(
                 'X-CMC_PRO_API_KEY': getCmcApiKey(),
                 'Accept': 'application/json',
               },
+              signal: AbortSignal.timeout(5000)
             }
           );
           if (response.ok) {
@@ -246,8 +318,18 @@ export async function registerRoutes(
         return res.status(503).json({ error: 'Unable to fetch price data from any source' });
       }
       
-      const result = { data, source };
-      setCache(cacheKey, result, 30000); // Cache for 30 seconds
+      // Extract token addresses for background price loading
+      const tokenAddresses = Array.isArray(data) 
+        ? data.slice(0, 20).map((t: any) => t.contract_address || t.id).filter(Boolean)
+        : [];
+      
+      // Non-blocking background fetch from secondary sources
+      if (tokenAddresses.length) {
+        fetchBackgroundSecondaryPrices(tokenAddresses);
+      }
+      
+      const result = { data, source, cached: false };
+      setCache(cacheKey, result, 120000); // Cache for 2 minutes (matches sequence)
       return res.json(result);
     } catch (error) {
       console.error('Price tokens error:', error);
