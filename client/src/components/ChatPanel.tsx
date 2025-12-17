@@ -3,6 +3,7 @@ import { useAccount, useEnsName } from 'wagmi';
 import { MessageCircle } from 'lucide-react';
 import { useChain, ChainType } from '@/lib/chainContext';
 import { fetchMessages, sendMessage, subscribeToMessages, getChatStatus, ChatStatus } from '@/lib/supabaseClient';
+import { useTypewriter } from '@/hooks/useTypewriter';
 
 interface Message {
   id: string;
@@ -36,6 +37,9 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLDivElement>(null);
+  
+  const chatPlaceholder = "Drop your alpha...";
+  const typewriterChatPlaceholder = useTypewriter(chatPlaceholder, 100, 50, 2000);
 
   // Fetch chat status on mount and when chat opens
   useEffect(() => {
@@ -304,7 +308,7 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
         <div className="chat-input">
           <input
             type="text"
-            placeholder="Drop your alpha..."
+            placeholder={typewriterChatPlaceholder || chatPlaceholder}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}

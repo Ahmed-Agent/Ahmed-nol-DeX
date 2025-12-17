@@ -4,6 +4,7 @@ import { Token, TokenStats, searchTokens, getTopTokens, getPlaceholderImage, get
 import { formatUSD, low, isAddress } from '@/lib/config';
 import { useChain } from '@/lib/chainContext';
 import { useTokenSelection } from '@/lib/tokenSelectionContext';
+import { useTypewriter } from '@/hooks/useTypewriter';
 
 interface ExtendedToken extends Token {
   chainId?: number;
@@ -24,6 +25,9 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const placeholderText = chain === 'BRG' ? 'Search ETH & POL tokens...' : `Search ${chain} tokens...`;
+  const typewriterPlaceholder = useTypewriter(placeholderText, 80, 40, 2000);
 
   const handleSearch = useCallback(async (query: string) => {
     // BRG mode: search both chains; otherwise single chain
@@ -196,7 +200,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
       <input
         ref={inputRef}
         type="text"
-        placeholder={chain === 'BRG' ? 'Search ETH & POL tokens...' : `Search ${chain} tokens...`}
+        placeholder={typewriterPlaceholder || placeholderText}
         value={searchQuery}
         onChange={handleInputChange}
         onFocus={handleFocus}
