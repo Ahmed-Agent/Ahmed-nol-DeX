@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useEnsName } from 'wagmi';
+import { MessageCircle } from 'lucide-react';
 import { fetchMessages, sendMessage, subscribeToMessages, getChatStatus, ChatStatus } from '@/lib/supabaseClient';
 
 interface Message {
@@ -237,8 +238,9 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
         className="chat-toggle"
         onClick={handleChatButtonClick}
         data-testid="button-chat-toggle"
+        title="Public Chat"
       >
-        Public Chat 🔘
+        <MessageCircle size={20} />
       </div>
 
       <div
