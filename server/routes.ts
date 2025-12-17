@@ -1233,6 +1233,7 @@ export async function registerRoutes(
         .slice(0, 3)
         .map(([id]) => id);
 
+      console.log(`[Reactions] Top 3 messages: ${ranked.join(', ')}, Hour: ${new Date(hourStart).toISOString()}`);
       return res.json({ success: true, stats, top3: ranked, hourStart });
     } catch (error) {
       console.error('Get reactions error:', error);

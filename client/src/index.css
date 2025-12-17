@@ -1548,6 +1548,74 @@ body.eth-chain .glassy-btn.connected {
   }
 }
 
+/* ===== MESSAGE REACTIONS & AURA ANIMATIONS ===== */
+@keyframes pulseAura {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.9;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeCountdown {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes countBounce {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+.count-animate {
+  animation: countBounce 0.3s ease-out;
+}
+
+.chat-msg {
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chat-msg.has-aura {
+  animation: pulseAura 2s ease-in-out infinite;
+}
+
+.aura-badge {
+  animation: pulseAura 2s ease-in-out infinite;
+}
+
+.reaction-buttons {
+  pointer-events: none;
+}
+
+.reaction-buttons.visible {
+  pointer-events: all;
+}
+
 /* ===== TOKEN INFO BUTTON & SIDEBAR ===== */
 .token-info-button {
   position: fixed;

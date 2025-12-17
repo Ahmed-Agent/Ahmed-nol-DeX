@@ -182,23 +182,24 @@ export async function subscribeToMessages(callback: (message: any) => void): Pro
   };
 }
 
-// Message reaction types
+// Message reaction types with hourly ranking
 export interface ReactionStats {
-  likes: number;
-  dislikes: number;
-  totalLikes: number;
-  totalDislikes: number;
+  likes: number; // Current hour
+  dislikes: number; // Current hour
+  totalLikes: number; // All-time
+  totalDislikes: number; // All-time
   userReaction: 'like' | 'dislike' | null;
 }
 
 export interface ReactionsResponse {
   success: boolean;
   stats: Record<string, ReactionStats>;
-  top3: string[];
+  top3: string[]; // Top 3 message IDs by likes in current hour
   hourStart: number;
+  prevHourTop3?: string[]; // Top 3 from previous hour (optional)
 }
 
-// React to a message
+// React to a message (within current hour)
 export async function reactToMessage(messageId: string, reactionType: 'like' | 'dislike'): Promise<{ success: boolean; action?: string; likes?: number; dislikes?: number; totalLikes?: number; totalDislikes?: number }> {
   try {
     const response = await fetch('/api/chat/react', {
@@ -213,7 +214,7 @@ export async function reactToMessage(messageId: string, reactionType: 'like' | '
   }
 }
 
-// Get reaction stats for multiple messages
+// Get reaction stats for multiple messages (current hour ranking)
 export async function getReactionStats(messageIds: string[]): Promise<ReactionsResponse | null> {
   try {
     const response = await fetch('/api/chat/reactions', {
