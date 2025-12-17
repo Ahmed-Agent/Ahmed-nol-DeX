@@ -65,8 +65,11 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
     if (isOpen && username) {
       loadMessages();
 
+      let unsubscribe: (() => void) | null = null;
+      let pollInterval: NodeJS.Timeout | null = null;
+
       // Real-time subscription for instant updates
-      const unsubscribe = subscribeToMessages((payload) => {
+      subscribeToMessages((payload) => {
         // Map payload to Message format
         const newMessage = {
           id: payload.id,
@@ -78,10 +81,12 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
           if (prev.some((m) => m.id === newMessage.id)) return prev;
           return [...prev, newMessage];
         });
+      }).then((unsub) => {
+        unsubscribe = unsub;
       });
 
       // Fast polling every 300ms (0.3s) - balanced for Supabase
-      const pollInterval = setInterval(() => {
+      pollInterval = setInterval(() => {
         loadMessages();
       }, 300);
 
@@ -89,7 +94,9 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
         if (unsubscribe) {
           unsubscribe();
         }
-        clearInterval(pollInterval);
+        if (pollInterval) {
+          clearInterval(pollInterval);
+        }
       };
     }
   }, [isOpen, username]);
