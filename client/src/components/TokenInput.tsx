@@ -168,10 +168,9 @@ export function TokenInput({
   };
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    // Move cursor to end of input
-    if (e.target.value) {
-      e.target.setSelectionRange(e.target.value.length, e.target.value.length);
-    }
+    // Always move cursor to end of input
+    const length = e.target.value.length;
+    e.target.setSelectionRange(length, length);
     handleSearch(searchQuery.trim().toLowerCase());
   };
 
@@ -315,6 +314,7 @@ export function TokenInput({
               fontSize: '13px',
               fontWeight: selectedToken ? 700 : 400,
               minWidth: '60px',
+              caretColor: '#fff',
             }}
             data-testid={`input-token-search-${side}`}
           />
