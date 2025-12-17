@@ -730,6 +730,10 @@ export default function Home() {
         toPriceUsd={toPriceUsd}
         fromChange24h={fromToken ? (getCgStatsMap(getTokenChainId(fromToken)).get(low(fromToken.symbol))?.change ?? null) : null}
         toChange24h={toToken ? (getCgStatsMap(getTokenChainId(toToken)).get(low(toToken.symbol))?.change ?? null) : null}
+        fromVolume24h={fromToken ? (getCgStatsMap(getTokenChainId(fromToken)).get(low(fromToken.symbol))?.volume24h ?? null) : null}
+        toVolume24h={toToken ? (getCgStatsMap(getTokenChainId(toToken)).get(low(toToken.symbol))?.volume24h ?? null) : null}
+        fromMarketCap={fromToken ? (getCgStatsMap(getTokenChainId(fromToken)).get(low(fromToken.symbol))?.marketCap ?? null) : null}
+        toMarketCap={toToken ? (getCgStatsMap(getTokenChainId(toToken)).get(low(toToken.symbol))?.marketCap ?? null) : null}
       />
     </div>
   );
