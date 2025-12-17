@@ -384,10 +384,8 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
                 key={msg.id} 
                 className={`chat-msg ${auraRank > 0 ? 'has-aura' : ''}`}
                 data-testid={`chat-msg-${msg.id}`}
-                onClick={() => handleMessageTap(msg.id)}
                 style={{
                   position: 'relative',
-                  cursor: 'pointer',
                   transition: 'all 0.3s ease',
                   ...(auraRank > 0 ? {
                     boxShadow: `0 0 ${20 - auraRank * 4}px ${chainColors.glow}, 0 0 ${40 - auraRank * 8}px ${chainColors.glow}`,
@@ -396,6 +394,7 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
                   } : {})
                 }}
               >
+                {/* Aura badge */}
                 {auraRank > 0 && (
                   <div 
                     className="aura-badge"
@@ -423,97 +422,97 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
                   </div>
                 )}
                 
-                <div style={{ fontWeight: 700, fontSize: '12px', color: chainColors.primary, marginBottom: '4px' }}>
-                  {msg.username}
+                {/* Message content - clickable */}
+                <div onClick={() => handleMessageTap(msg.id)} style={{ cursor: 'pointer' }}>
+                  <div style={{ fontWeight: 700, fontSize: '12px', color: chainColors.primary, marginBottom: '4px' }}>
+                    {msg.username}
+                  </div>
+                  <div>{msg.message}</div>
+                  
+                  {/* Reaction counts display */}
+                  {stats && (stats.totalLikes > 0 || stats.totalDislikes > 0) && (
+                    <div 
+                      style={{
+                        display: 'flex',
+                        gap: '12px',
+                        marginTop: '6px',
+                        fontSize: '11px',
+                        opacity: 0.8
+                      }}
+                    >
+                      {stats.totalLikes > 0 && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: chainColors.primary }}>
+                          <ThumbsUp size={12} />
+                          <span className={isReacting ? 'count-animate' : ''}>{stats.totalLikes}</span>
+                        </span>
+                      )}
+                      {stats.totalDislikes > 0 && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#ff6b6b' }}>
+                          <ThumbsDown size={12} />
+                          <span className={isReacting ? 'count-animate' : ''}>{stats.totalDislikes}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div>{msg.message}</div>
                 
-                {/* Reaction counts display */}
-                {stats && (stats.totalLikes > 0 || stats.totalDislikes > 0) && (
+                {/* Reaction buttons - show as popup below message */}
+                {isActive && (
                   <div 
                     style={{
                       display: 'flex',
-                      gap: '12px',
-                      marginTop: '6px',
-                      fontSize: '11px',
-                      opacity: 0.8
+                      gap: '6px',
+                      marginTop: '8px',
+                      justifyContent: 'center',
+                      animation: 'slideIn 0.2s ease'
                     }}
                   >
-                    {stats.totalLikes > 0 && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: chainColors.primary }}>
-                        <ThumbsUp size={12} />
-                        <span className={isReacting ? 'count-animate' : ''}>{stats.totalLikes}</span>
-                      </span>
-                    )}
-                    {stats.totalDislikes > 0 && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#ff6b6b' }}>
-                        <ThumbsDown size={12} />
-                        <span className={isReacting ? 'count-animate' : ''}>{stats.totalDislikes}</span>
-                      </span>
-                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like'); }}
+                      disabled={isReacting}
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '50%',
+                        border: `2px solid ${chainColors.primary}`,
+                        background: stats?.userReaction === 'like' ? chainColors.primary : 'rgba(0,0,0,0.4)',
+                        color: stats?.userReaction === 'like' ? '#fff' : chainColors.primary,
+                        cursor: isReacting ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                        backdropFilter: 'blur(4px)',
+                        opacity: isReacting ? 0.6 : 1
+                      }}
+                      data-testid={`button-like-${msg.id}`}
+                    >
+                      <ThumbsUp size={18} />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'dislike'); }}
+                      disabled={isReacting}
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '50%',
+                        border: '2px solid #ff6b6b',
+                        background: stats?.userReaction === 'dislike' ? '#ff6b6b' : 'rgba(0,0,0,0.4)',
+                        color: stats?.userReaction === 'dislike' ? '#fff' : '#ff6b6b',
+                        cursor: isReacting ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                        backdropFilter: 'blur(4px)',
+                        opacity: isReacting ? 0.6 : 1
+                      }}
+                      data-testid={`button-dislike-${msg.id}`}
+                    >
+                      <ThumbsDown size={18} />
+                    </button>
                   </div>
                 )}
-                
-                {/* Reaction buttons - show on tap */}
-                <div 
-                  className={`reaction-buttons ${isActive ? 'visible' : ''}`}
-                  style={{
-                    position: 'absolute',
-                    top: '50%',
-                    right: '-50px',
-                    transform: 'translateY(-50%)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                    opacity: isActive ? 1 : 0,
-                    visibility: isActive ? 'visible' : 'hidden',
-                    transition: 'all 0.25s ease',
-                    zIndex: 20
-                  }}
-                >
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like'); }}
-                    disabled={isReacting}
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      border: `2px solid ${chainColors.primary}`,
-                      background: stats?.userReaction === 'like' ? chainColors.primary : 'rgba(0,0,0,0.6)',
-                      color: stats?.userReaction === 'like' ? '#fff' : chainColors.primary,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.2s ease',
-                      backdropFilter: 'blur(4px)'
-                    }}
-                    data-testid={`button-like-${msg.id}`}
-                  >
-                    <ThumbsUp size={16} />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'dislike'); }}
-                    disabled={isReacting}
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      border: '2px solid #ff6b6b',
-                      background: stats?.userReaction === 'dislike' ? '#ff6b6b' : 'rgba(0,0,0,0.6)',
-                      color: stats?.userReaction === 'dislike' ? '#fff' : '#ff6b6b',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.2s ease',
-                      backdropFilter: 'blur(4px)'
-                    }}
-                    data-testid={`button-dislike-${msg.id}`}
-                  >
-                    <ThumbsDown size={16} />
-                  </button>
-                </div>
               </div>
             );
           })}
