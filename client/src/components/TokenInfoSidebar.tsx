@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Token } from '@/lib/tokenService';
 import { formatUSD } from '@/lib/config';
+import { useChain, ChainType } from '@/lib/chainContext';
 
 interface TokenInfoSidebarProps {
   fromToken: Token | null;
@@ -116,8 +117,15 @@ export function TokenInfoSidebar({
 }: TokenInfoSidebarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
+  const { chain } = useChain();
 
   const hasTokens = fromToken || toToken;
+
+  const getRadarButtonClass = () => {
+    if (chain === 'ETH') return 'token-info-button eth-active';
+    if (chain === 'BRG') return 'token-info-button brg-active';
+    return 'token-info-button';
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -152,7 +160,7 @@ export function TokenInfoSidebar({
       {/* Button - Mini Radar with Custom Radar Icon */}
       <div
         ref={buttonRef}
-        className="token-info-button"
+        className={getRadarButtonClass()}
         onClick={handleRadarClick}
         style={{ opacity: hasTokens && !isChatOpen ? 1 : 0.5, cursor: hasTokens && !isChatOpen ? 'pointer' : 'not-allowed' }}
         data-testid="button-token-info"

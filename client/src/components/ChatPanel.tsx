@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useEnsName } from 'wagmi';
 import { MessageCircle } from 'lucide-react';
+import { useChain, ChainType } from '@/lib/chainContext';
 import { fetchMessages, sendMessage, subscribeToMessages, getChatStatus, ChatStatus } from '@/lib/supabaseClient';
 
 interface Message {
@@ -17,6 +18,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelProps = {}) {
   const { address, isConnected } = useAccount();
+  const { chain } = useChain();
   // Use wagmi's useEnsName hook for ENS lookup on Ethereum mainnet
   const { data: ensName } = useEnsName({
     address: address,
@@ -231,11 +233,17 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
     }
   };
 
+  const getChatToggleClass = () => {
+    if (chain === 'ETH') return 'chat-toggle eth-active';
+    if (chain === 'BRG') return 'chat-toggle brg-active';
+    return 'chat-toggle';
+  };
+
   return (
     <>
       <div
         ref={toggleRef}
-        className="chat-toggle"
+        className={getChatToggleClass()}
         onClick={handleChatButtonClick}
         data-testid="button-chat-toggle"
         title="Public Chat"
