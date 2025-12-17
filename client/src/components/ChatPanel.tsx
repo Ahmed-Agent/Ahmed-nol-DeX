@@ -190,12 +190,13 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
   const loadMessages = async () => {
     const msgs = await fetchMessages();
     setMessages(msgs);
-    // Load reaction stats for all messages
+    // Load reaction stats for all messages immediately
     if (msgs.length > 0) {
       const stats = await getReactionStats(msgs.map(m => m.id));
       if (stats) {
         setReactionStats(stats.stats);
         setTop3Messages(stats.top3);
+        console.log('[Chat] Loaded reaction stats:', stats.stats);
       }
     }
   };
@@ -206,15 +207,7 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
       const refreshStats = async () => {
         const stats = await getReactionStats(messages.map(m => m.id));
         if (stats) {
-          setReactionStats(prev => {
-            const updated = { ...prev };
-            for (const msgId in stats.stats) {
-              if (updated[msgId] && stats.stats[msgId]) {
-                updated[msgId] = stats.stats[msgId];
-              }
-            }
-            return updated;
-          });
+          setReactionStats(stats.stats);
           setTop3Messages(stats.top3);
         }
       };
@@ -398,17 +391,7 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
           }}
           data-testid="container-chat-messages"
         >
-          {/* Sort messages: pinned (top 3) first, then rest */}
-          {messages.sort((a, b) => {
-            const aRank = getAuraRank(a.id);
-            const bRank = getAuraRank(b.id);
-            // Pinned messages come first (ranked > 0)
-            if (aRank > 0 && bRank === 0) return -1;
-            if (aRank === 0 && bRank > 0) return 1;
-            // Among pinned, sort by rank (1, 2, 3)
-            if (aRank > 0 && bRank > 0) return aRank - bRank;
-            return 0;
-          }).map((msg) => {
+          {messages.map((msg) => {
             const stats = reactionStats[msg.id];
             const auraRank = getAuraRank(msg.id);
             const isActive = activeReactionMsg === msg.id;
@@ -417,45 +400,13 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
             return (
               <div 
                 key={msg.id} 
-                className={`chat-msg ${auraRank > 0 ? 'has-aura' : ''}`}
+                className="chat-msg"
                 data-testid={`chat-msg-${msg.id}`}
                 style={{
                   position: 'relative',
-                  transition: 'all 0.3s ease',
-                  ...(auraRank > 0 ? {
-                    boxShadow: `0 0 ${20 - auraRank * 4}px ${chainColors.glow}, 0 0 ${40 - auraRank * 8}px ${chainColors.glow}`,
-                    border: `1px solid ${chainColors.primary}40`,
-                    background: `linear-gradient(135deg, ${chainColors.primary}10, ${chainColors.secondary}08)`,
-                  } : {})
+                  transition: 'all 0.3s ease'
                 }}
               >
-                {/* Aura badge */}
-                {auraRank > 0 && (
-                  <div 
-                    className="aura-badge"
-                    style={{
-                      position: 'absolute',
-                      top: '-8px',
-                      right: '-8px',
-                      width: '22px',
-                      height: '22px',
-                      borderRadius: '50%',
-                      background: `linear-gradient(135deg, ${chainColors.primary}, ${chainColors.secondary})`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      fontWeight: 900,
-                      color: auraRank === 3 && chain === 'BRG' ? '#000' : '#fff',
-                      boxShadow: `0 2px 8px ${chainColors.glow}`,
-                      animation: 'pulseAura 2s ease-in-out infinite',
-                      zIndex: 10
-                    }}
-                    data-testid={`aura-badge-${msg.id}`}
-                  >
-                    {auraRank}
-                  </div>
-                )}
                 
                 {/* Message content - clickable */}
                 <div onClick={() => handleMessageTap(msg.id)} style={{ cursor: 'pointer' }}>
