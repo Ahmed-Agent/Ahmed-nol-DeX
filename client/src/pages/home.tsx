@@ -274,11 +274,9 @@ export default function Home() {
         const leavingBrgMode = newChain !== 'BRG' && prevChain === 'BRG';
         
         if (enteringBrgMode) {
-          // BRG mode: keep token selections, just clear quotes and amounts
-          setFromAmount('');
-          setToAmount('');
+          // BRG mode: keep token selections, amounts, and quotes
           setQuote(null);
-          console.log(`[ChainSwitch] Entered BRG mode, preserving token selections`);
+          console.log(`[ChainSwitch] Entered BRG mode, preserving token selections and inputs`);
         } else if (leavingBrgMode) {
           // Leaving BRG mode: reset all and load defaults for new chain
           setFromAmount('');
