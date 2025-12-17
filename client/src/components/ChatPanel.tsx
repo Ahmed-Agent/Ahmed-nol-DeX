@@ -34,9 +34,11 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
   const [isSending, setIsSending] = useState(false);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<ChatStatus | null>(null);
+  const [countdownTimer, setCountdownTimer] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLDivElement>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   const chatPlaceholders = ["Drop your alpha...", "Share your insights..."];
   const typewriterChatPlaceholder = useTypewriter(chatPlaceholders, 70, 35, 900);
@@ -122,6 +124,15 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Cleanup countdown interval on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -218,8 +229,22 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
       setInputValue(messageText);
       if (result.error === 'rate_limit') {
         setRateLimitMessage(result.message || 'Rate limit reached');
-        // Auto-clear message after 10 seconds
-        setTimeout(() => setRateLimitMessage(null), 10000);
+        // Start countdown timer
+        if (result.secondsUntilReset) {
+          setCountdownTimer(result.secondsUntilReset);
+          // Start interval for countdown
+          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = setInterval(() => {
+            setCountdownTimer((prev) => {
+              if (prev === null || prev <= 1) {
+                if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+                setRateLimitMessage(null);
+                return null;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        }
       }
     } else {
       // Refresh chat status after successful send
@@ -285,23 +310,40 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Temporary rate limit notification on send attempt */}
-        {rateLimitMessage && (
+        {/* Floating rate limit handler with countdown */}
+        {rateLimitMessage && countdownTimer !== null && (
           <div 
             style={{
-              padding: '10px 12px',
-              marginBottom: '8px',
-              background: 'linear-gradient(135deg, rgba(255,180,70,0.15), rgba(255,140,50,0.1))',
-              border: '1px solid rgba(255,180,70,0.3)',
-              borderRadius: '8px',
-              fontSize: '12px',
-              color: '#ffb446',
+              position: 'fixed',
+              bottom: '100px',
+              right: '20px',
+              padding: '16px 20px',
+              background: 'linear-gradient(135deg, rgba(255,180,70,0.2), rgba(255,140,50,0.15))',
+              border: '1px solid rgba(255,180,70,0.5)',
+              borderRadius: '12px',
+              fontSize: '13px',
+              color: '#ffb545',
               textAlign: 'center',
-              animation: 'fadeIn 0.3s ease'
+              animation: 'slideIn 0.4s ease',
+              zIndex: 9998,
+              maxWidth: '280px',
+              backdropFilter: 'blur(6px)',
+              boxShadow: '0 8px 32px rgba(255,180,70,0.2)'
             }}
-            data-testid="notification-rate-limit"
+            data-testid="notification-rate-limit-float"
           >
-            {rateLimitMessage}
+            <div style={{ fontWeight: 700, marginBottom: '8px', fontSize: '12px', opacity: 0.9 }}>
+              {rateLimitMessage}
+            </div>
+            <div style={{
+              fontWeight: 900,
+              fontSize: '24px',
+              fontFamily: 'monospace',
+              color: '#ffc870',
+              letterSpacing: '2px'
+            }}>
+              {String(Math.floor(countdownTimer / 60)).padStart(2, '0')}:{String(countdownTimer % 60).padStart(2, '0')}
+            </div>
           </div>
         )}
 

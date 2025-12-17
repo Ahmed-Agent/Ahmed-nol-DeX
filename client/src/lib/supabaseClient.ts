@@ -101,8 +101,7 @@ interface SendMessageResult {
   success: boolean;
   message?: string;
   error?: string;
-  reason?: 'cooldown' | 'daily_limit';
-  cooldownSeconds?: number;
+  secondsUntilReset?: number;
   remainingMessages?: number;
 }
 
@@ -121,8 +120,7 @@ export async function sendMessage(username: string, message: string): Promise<Se
         success: false,
         message: data.message || 'Failed to send message',
         error: data.error,
-        reason: data.reason,
-        cooldownSeconds: data.cooldownSeconds,
+        secondsUntilReset: data.secondsUntilReset,
         remainingMessages: data.remainingMessages
       };
     }
@@ -141,12 +139,10 @@ export async function sendMessage(username: string, message: string): Promise<Se
 export interface ChatStatus {
   canSend: boolean;
   remainingMessages: number;
-  maxMessagesPerDay: number;
-  cooldownSeconds: number;
-  cooldownMinutes: number;
-  hoursUntilReset: number;
-  minutesUntilReset: number;
-  resetTime: string;
+  maxMessagesPerHour: number;
+  secondsUntilReset: number;
+  minutesStr: string;
+  secondsStr: string;
 }
 
 export async function getChatStatus(): Promise<ChatStatus | null> {

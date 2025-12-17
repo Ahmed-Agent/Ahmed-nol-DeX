@@ -36,107 +36,83 @@ const RATE_LIMIT_WINDOW = 60000; // 1 minute
 const RATE_LIMIT_MAX = 60; // 60 requests per minute
 
 // ====== CHAT MESSAGE RATE LIMITING ======
-// Tracks IP addresses for chat message rate limiting
+// Tracks IP addresses for chat message rate limiting - 3 messages per hour
 interface ChatRateLimitEntry {
-  dailyCount: number;
-  lastMessageTime: number;
-  dayStartTime: number;
+  messageTimes: number[]; // Array of message timestamps within the hour window
+  hourStart: number; // Start of current hour window
 }
 
 const chatRateLimits = new Map<string, ChatRateLimitEntry>();
-const CHAT_MAX_PER_DAY = 10; // Maximum 10 messages per day per IP
-const CHAT_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes between messages
+const CHAT_MAX_PER_HOUR = 3; // Maximum 3 messages per hour per IP
+const CHAT_HOUR_MS = 60 * 60 * 1000; // 1 hour
 
-// Get the start of the current "day" at 12:00 GMT
-function getChatDayStart(): number {
-  const now = new Date();
-  const today12GMT = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-    12, 0, 0, 0
-  ));
-  
-  // If current time is before 12:00 GMT today, the day started yesterday at 12:00 GMT
-  if (now.getTime() < today12GMT.getTime()) {
-    return today12GMT.getTime() - 24 * 60 * 60 * 1000;
+// Get time until next message can be sent
+function getTimeUntilNextMessage(ip: string): { seconds: number; minutesStr: string; secondsStr: string } {
+  const entry = chatRateLimits.get(ip);
+  if (!entry || entry.messageTimes.length < CHAT_MAX_PER_HOUR) {
+    return { seconds: 0, minutesStr: '0', secondsStr: '0' };
   }
-  return today12GMT.getTime();
+  
+  const oldestMessageTime = entry.messageTimes[0];
+  const windowStart = oldestMessageTime + CHAT_HOUR_MS;
+  const now = Date.now();
+  const remaining = Math.max(0, windowStart - now);
+  
+  const seconds = Math.ceil(remaining / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  
+  return { seconds, minutesStr: String(minutes), secondsStr: String(secs).padStart(2, '0') };
 }
 
-// Get time until next 12:00 GMT reset
-function getTimeUntilReset(): { hours: number; minutes: number } {
+// Check chat rate limit for an IP - 3 messages per hour
+function checkChatRateLimit(ip: string): { allowed: boolean; remainingMessages?: number; secondsUntilReset?: number } {
   const now = Date.now();
-  const dayStart = getChatDayStart();
-  const nextReset = dayStart + 24 * 60 * 60 * 1000;
-  const remaining = nextReset - now;
-  
-  const hours = Math.floor(remaining / (60 * 60 * 1000));
-  const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
-  
-  return { hours, minutes };
-}
-
-// Check chat rate limit for an IP
-function checkChatRateLimit(ip: string): { allowed: boolean; reason?: string; remainingMessages?: number; cooldownSeconds?: number } {
-  const now = Date.now();
-  const dayStart = getChatDayStart();
-  
   let entry = chatRateLimits.get(ip);
   
-  // If no entry or day has changed, reset the daily count
-  if (!entry || entry.dayStartTime !== dayStart) {
+  // Create new entry if doesn't exist
+  if (!entry) {
     entry = {
-      dailyCount: 0,
-      lastMessageTime: 0,
-      dayStartTime: dayStart
+      messageTimes: [],
+      hourStart: now
     };
     chatRateLimits.set(ip, entry);
   }
   
-  // Check 3-minute cooldown
-  const timeSinceLastMessage = now - entry.lastMessageTime;
-  if (entry.lastMessageTime > 0 && timeSinceLastMessage < CHAT_COOLDOWN_MS) {
-    const remainingCooldown = Math.ceil((CHAT_COOLDOWN_MS - timeSinceLastMessage) / 1000);
-    return {
-      allowed: false,
-      reason: 'cooldown',
-      cooldownSeconds: remainingCooldown
-    };
-  }
+  // Remove messages outside the current hour window
+  const hourStart = now - CHAT_HOUR_MS;
+  entry.messageTimes = entry.messageTimes.filter(time => time > hourStart);
   
-  // Check daily limit
-  if (entry.dailyCount >= CHAT_MAX_PER_DAY) {
-    const { hours, minutes } = getTimeUntilReset();
+  // Check if at limit
+  if (entry.messageTimes.length >= CHAT_MAX_PER_HOUR) {
+    const timeUntilNext = getTimeUntilNextMessage(ip);
     return {
       allowed: false,
-      reason: 'daily_limit',
-      remainingMessages: 0
+      remainingMessages: 0,
+      secondsUntilReset: timeUntilNext.seconds
     };
   }
   
   return {
     allowed: true,
-    remainingMessages: CHAT_MAX_PER_DAY - entry.dailyCount - 1
+    remainingMessages: CHAT_MAX_PER_HOUR - entry.messageTimes.length - 1
   };
 }
 
 // Record a message sent by an IP
 function recordChatMessage(ip: string): void {
   const now = Date.now();
-  const dayStart = getChatDayStart();
-  
   let entry = chatRateLimits.get(ip);
   
-  if (!entry || entry.dayStartTime !== dayStart) {
+  if (!entry) {
     entry = {
-      dailyCount: 1,
-      lastMessageTime: now,
-      dayStartTime: dayStart
+      messageTimes: [now],
+      hourStart: now
     };
   } else {
-    entry.dailyCount++;
-    entry.lastMessageTime = now;
+    const hourStart = now - CHAT_HOUR_MS;
+    entry.messageTimes = entry.messageTimes.filter(time => time > hourStart);
+    entry.messageTimes.push(now);
   }
   
   chatRateLimits.set(ip, entry);
@@ -144,16 +120,18 @@ function recordChatMessage(ip: string): void {
 
 // Clean up old chat rate limit entries periodically
 setInterval(() => {
-  const dayStart = getChatDayStart();
+  const now = Date.now();
   const entriesToDelete: string[] = [];
   for (const [ip, entry] of chatRateLimits.entries()) {
-    // Remove entries from previous days
-    if (entry.dayStartTime !== dayStart) {
+    const hourStart = now - CHAT_HOUR_MS;
+    entry.messageTimes = entry.messageTimes.filter(time => time > hourStart);
+    // Remove entries with no messages in the last hour
+    if (entry.messageTimes.length === 0) {
       entriesToDelete.push(ip);
     }
   }
   entriesToDelete.forEach(ip => chatRateLimits.delete(ip));
-}, 60000 * 10); // Clean every 10 minutes
+}, 60000); // Clean every minute
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
@@ -983,7 +961,7 @@ export async function registerRoutes(
   });
 
   // ====== CHAT MESSAGE API WITH RATE LIMITING ======
-  // Send chat message with IP-based rate limiting
+  // Send chat message with IP-based rate limiting (3 per hour)
   app.post("/api/chat/send", async (req, res) => {
     try {
       const ip = getClientIp(req);
@@ -997,33 +975,17 @@ export async function registerRoutes(
         return res.status(400).json({ success: false, error: 'Message too long (max 500 characters)' });
       }
 
-      // Check rate limit
+      // Check rate limit (3 per hour)
       const rateCheck = checkChatRateLimit(ip);
       
       if (!rateCheck.allowed) {
-        if (rateCheck.reason === 'cooldown') {
-          const minutes = Math.floor((rateCheck.cooldownSeconds || 0) / 60);
-          const seconds = (rateCheck.cooldownSeconds || 0) % 60;
-          const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-          return res.status(429).json({
-            success: false,
-            error: 'rate_limit',
-            reason: 'cooldown',
-            message: `Take a breather! You can send another message in ${timeStr}`,
-            cooldownSeconds: rateCheck.cooldownSeconds
-          });
-        } else {
-          // Daily limit or unknown reason - block the message
-          const { hours, minutes } = getTimeUntilReset();
-          return res.status(429).json({
-            success: false,
-            error: 'rate_limit',
-            reason: 'daily_limit',
-            message: `You've reached your daily message limit! Come back in ${hours}h ${minutes}m when the new day starts at 12:00 GMT`,
-            hoursUntilReset: hours,
-            minutesUntilReset: minutes
-          });
-        }
+        const timeUntil = getTimeUntilNextMessage(ip);
+        return res.status(429).json({
+          success: false,
+          error: 'rate_limit',
+          message: `Limit reached! You have 3 messages per hour. Try again in ${timeUntil.minutesStr}:${timeUntil.secondsStr}`,
+          secondsUntilReset: rateCheck.secondsUntilReset
+        });
       }
 
       // Send to Supabase
@@ -1058,18 +1020,17 @@ export async function registerRoutes(
       // Record the message in rate limiter
       recordChatMessage(ip);
 
-      // Calculate remaining messages correctly (messages left AFTER this send)
-      const dayStart = getChatDayStart();
+      // Calculate remaining messages
       const entry = chatRateLimits.get(ip);
-      const messagesUsed = entry?.dailyCount || 1;
-      const remainingMessages = Math.max(0, CHAT_MAX_PER_DAY - messagesUsed);
+      const messagesUsed = entry?.messageTimes.length || 1;
+      const remainingMessages = Math.max(0, CHAT_MAX_PER_HOUR - messagesUsed);
 
       return res.json({
         success: true,
         remainingMessages,
         message: remainingMessages === 0 
-          ? "That was your last message for today! See you tomorrow at 12:00 GMT"
-          : `Message sent! You have ${remainingMessages} message${remainingMessages === 1 ? '' : 's'} left today`
+          ? "That was your last message this hour! Come back later"
+          : `Message sent! You have ${remainingMessages} message${remainingMessages === 1 ? '' : 's'} left this hour`
       });
     } catch (error) {
       console.error('Chat send error:', error);
@@ -1081,29 +1042,15 @@ export async function registerRoutes(
   app.get("/api/chat/status", (req, res) => {
     const ip = getClientIp(req);
     const rateCheck = checkChatRateLimit(ip);
-    const { hours, minutes } = getTimeUntilReset();
-    
-    // Get entry directly for cooldown info
-    const dayStart = getChatDayStart();
-    const entry = chatRateLimits.get(ip);
-    let cooldownSeconds = 0;
-    
-    if (entry && entry.dayStartTime === dayStart && entry.lastMessageTime > 0) {
-      const timeSinceLastMessage = Date.now() - entry.lastMessageTime;
-      if (timeSinceLastMessage < CHAT_COOLDOWN_MS) {
-        cooldownSeconds = Math.ceil((CHAT_COOLDOWN_MS - timeSinceLastMessage) / 1000);
-      }
-    }
+    const timeUntil = getTimeUntilNextMessage(ip);
     
     return res.json({
       canSend: rateCheck.allowed,
-      remainingMessages: rateCheck.allowed ? (rateCheck.remainingMessages !== undefined ? rateCheck.remainingMessages + 1 : CHAT_MAX_PER_DAY) : 0,
-      maxMessagesPerDay: CHAT_MAX_PER_DAY,
-      cooldownSeconds,
-      cooldownMinutes: 3,
-      hoursUntilReset: hours,
-      minutesUntilReset: minutes,
-      resetTime: '12:00 GMT'
+      remainingMessages: rateCheck.remainingMessages || 0,
+      maxMessagesPerHour: CHAT_MAX_PER_HOUR,
+      secondsUntilReset: rateCheck.secondsUntilReset || 0,
+      minutesStr: timeUntil.minutesStr,
+      secondsStr: timeUntil.secondsStr
     });
   });
 
