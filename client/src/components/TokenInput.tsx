@@ -39,13 +39,7 @@ export function TokenInput({
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Update searchQuery when selectedToken changes
-  useEffect(() => {
-    if (selectedToken) {
-      setSearchQuery(selectedToken.symbol.toUpperCase());
-    }
-  }, [selectedToken?.address]);
+  const lastSelectedAddressRef = useRef<string>('');
 
   const handleSearch = useCallback(async (query: string) => {
     // BRG mode: search both chains; otherwise single chain
@@ -173,25 +167,29 @@ export function TokenInput({
   const handleBlur = () => {
     setTimeout(() => {
       setShowSuggestions(false);
-      if (selectedToken) {
-        setSearchQuery(selectedToken.symbol.toUpperCase());
-      } else {
-        setSearchQuery('');
+      // Only update searchQuery if a token wasn't just selected
+      if (lastSelectedAddressRef.current === '') {
+        if (selectedToken) {
+          setSearchQuery(selectedToken.symbol.toUpperCase());
+        } else {
+          setSearchQuery('');
+        }
       }
+      lastSelectedAddressRef.current = '';
     }, 200);
   };
 
   const handleSelectToken = (token: Token) => {
-    onTokenSelect(token);
+    lastSelectedAddressRef.current = token.address;
     setSearchQuery(token.symbol.toUpperCase());
+    onTokenSelect(token);
     setShowSuggestions(false);
     inputRef.current?.blur();
   };
 
-  // Keep ticker visible when token is selected but allow user typing
-  // Always normalize to uppercase and sync when selectedToken changes
+  // Sync searchQuery with selectedToken only when token actually changes (not during selection)
   useEffect(() => {
-    if (selectedToken) {
+    if (selectedToken && lastSelectedAddressRef.current === '') {
       setSearchQuery(selectedToken.symbol.toUpperCase());
     }
   }, [selectedToken?.address]);
