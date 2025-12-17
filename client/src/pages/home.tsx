@@ -336,7 +336,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchPrices();
-  }, [fetchPrices]);
+  }, [fetchPrices, chain]);
 
   // Listen for token selection from main search bar
   useEffect(() => {
