@@ -200,17 +200,28 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
     }
   };
 
-  // Refresh reaction stats periodically (every 10 seconds)
+  // Refresh reaction stats every 1 second for real-time global consistency
   useEffect(() => {
     if (isOpen && messages.length > 0) {
       const refreshStats = async () => {
         const stats = await getReactionStats(messages.map(m => m.id));
         if (stats) {
-          setReactionStats(stats.stats);
+          setReactionStats(prev => {
+            const updated = { ...prev };
+            for (const msgId in stats.stats) {
+              if (updated[msgId] && stats.stats[msgId]) {
+                updated[msgId] = stats.stats[msgId];
+              }
+            }
+            return updated;
+          });
           setTop3Messages(stats.top3);
         }
       };
-      reactionRefreshRef.current = setInterval(refreshStats, 10000);
+      // Immediate refresh on open
+      refreshStats();
+      // Then refresh every 1 second
+      reactionRefreshRef.current = setInterval(refreshStats, 1000);
       return () => {
         if (reactionRefreshRef.current) clearInterval(reactionRefreshRef.current);
       };
