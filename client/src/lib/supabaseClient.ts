@@ -181,3 +181,50 @@ export async function subscribeToMessages(callback: (message: any) => void): Pro
     channel.unsubscribe();
   };
 }
+
+// Message reaction types
+export interface ReactionStats {
+  likes: number;
+  dislikes: number;
+  totalLikes: number;
+  totalDislikes: number;
+  userReaction: 'like' | 'dislike' | null;
+}
+
+export interface ReactionsResponse {
+  success: boolean;
+  stats: Record<string, ReactionStats>;
+  top3: string[];
+  hourStart: number;
+}
+
+// React to a message
+export async function reactToMessage(messageId: string, reactionType: 'like' | 'dislike'): Promise<{ success: boolean; action?: string; likes?: number; dislikes?: number; totalLikes?: number; totalDislikes?: number }> {
+  try {
+    const response = await fetch('/api/chat/react', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageId, reactionType })
+    });
+    return await response.json();
+  } catch (e) {
+    console.error('reactToMessage exception:', e);
+    return { success: false };
+  }
+}
+
+// Get reaction stats for multiple messages
+export async function getReactionStats(messageIds: string[]): Promise<ReactionsResponse | null> {
+  try {
+    const response = await fetch('/api/chat/reactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageIds })
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (e) {
+    console.error('getReactionStats exception:', e);
+    return null;
+  }
+}

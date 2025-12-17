@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useEnsName } from 'wagmi';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useChain, ChainType } from '@/lib/chainContext';
-import { fetchMessages, sendMessage, subscribeToMessages, getChatStatus, ChatStatus } from '@/lib/supabaseClient';
+import { fetchMessages, sendMessage, subscribeToMessages, getChatStatus, ChatStatus, reactToMessage, getReactionStats, ReactionStats } from '@/lib/supabaseClient';
 import { useTypewriter } from '@/hooks/useTypewriter';
 
 interface Message {
@@ -10,6 +10,18 @@ interface Message {
   username: string;
   message: string;
   created_at: string;
+}
+
+// Get themed colors based on chain
+function getChainColors(chain: ChainType): { primary: string; secondary: string; glow: string } {
+  switch (chain) {
+    case 'ETH':
+      return { primary: '#4589ff', secondary: '#1370ff', glow: 'rgba(69, 137, 255, 0.6)' };
+    case 'BRG':
+      return { primary: '#ffb545', secondary: '#ff9f13', glow: 'rgba(255, 181, 69, 0.6)' };
+    default:
+      return { primary: '#b445ff', secondary: '#7013ff', glow: 'rgba(180, 69, 255, 0.6)' };
+  }
 }
 
 interface ChatPanelProps {
@@ -35,10 +47,15 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<ChatStatus | null>(null);
   const [countdownTimer, setCountdownTimer] = useState<number | null>(null);
+  const [reactionStats, setReactionStats] = useState<Record<string, ReactionStats>>({});
+  const [top3Messages, setTop3Messages] = useState<string[]>([]);
+  const [activeReactionMsg, setActiveReactionMsg] = useState<string | null>(null);
+  const [reactingTo, setReactingTo] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLDivElement>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reactionRefreshRef = useRef<NodeJS.Timeout | null>(null);
   
   const chatPlaceholders = ["Drop your alpha...", "Share your insights..."];
   const typewriterChatPlaceholder = useTypewriter(chatPlaceholders, 70, 35, 900);
@@ -159,7 +176,64 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
   const loadMessages = async () => {
     const msgs = await fetchMessages();
     setMessages(msgs);
+    // Load reaction stats for all messages
+    if (msgs.length > 0) {
+      const stats = await getReactionStats(msgs.map(m => m.id));
+      if (stats) {
+        setReactionStats(stats.stats);
+        setTop3Messages(stats.top3);
+      }
+    }
   };
+
+  // Refresh reaction stats periodically (every 10 seconds)
+  useEffect(() => {
+    if (isOpen && messages.length > 0) {
+      const refreshStats = async () => {
+        const stats = await getReactionStats(messages.map(m => m.id));
+        if (stats) {
+          setReactionStats(stats.stats);
+          setTop3Messages(stats.top3);
+        }
+      };
+      reactionRefreshRef.current = setInterval(refreshStats, 10000);
+      return () => {
+        if (reactionRefreshRef.current) clearInterval(reactionRefreshRef.current);
+      };
+    }
+  }, [isOpen, messages.length]);
+
+  // Handle reaction click
+  const handleReaction = async (messageId: string, type: 'like' | 'dislike') => {
+    if (reactingTo) return; // Prevent double-click
+    setReactingTo(messageId);
+    
+    const result = await reactToMessage(messageId, type);
+    if (result.success) {
+      // Refresh stats after reaction
+      const stats = await getReactionStats(messages.map(m => m.id));
+      if (stats) {
+        setReactionStats(stats.stats);
+        setTop3Messages(stats.top3);
+      }
+    }
+    
+    setReactingTo(null);
+    setActiveReactionMsg(null);
+  };
+
+  // Toggle reaction panel visibility
+  const handleMessageTap = (messageId: string) => {
+    setActiveReactionMsg(activeReactionMsg === messageId ? null : messageId);
+  };
+
+  // Get aura rank (1, 2, 3) or 0 if not in top 3
+  const getAuraRank = (messageId: string): number => {
+    const idx = top3Messages.indexOf(messageId);
+    return idx === -1 ? 0 : idx + 1;
+  };
+
+  const chainColors = getChainColors(chain);
 
   const handleChatButtonClick = () => {
     if (!isOpen && !username) {
@@ -299,14 +373,150 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
           }}
           data-testid="container-chat-messages"
         >
-          {messages.map((msg) => (
-            <div key={msg.id} className="chat-msg" data-testid={`chat-msg-${msg.id}`}>
-              <div style={{ fontWeight: 700, fontSize: '12px', color: '#b445ff', marginBottom: '4px' }}>
-                {msg.username}
+          {messages.map((msg) => {
+            const stats = reactionStats[msg.id];
+            const auraRank = getAuraRank(msg.id);
+            const isActive = activeReactionMsg === msg.id;
+            const isReacting = reactingTo === msg.id;
+            
+            return (
+              <div 
+                key={msg.id} 
+                className={`chat-msg ${auraRank > 0 ? 'has-aura' : ''}`}
+                data-testid={`chat-msg-${msg.id}`}
+                onClick={() => handleMessageTap(msg.id)}
+                style={{
+                  position: 'relative',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  ...(auraRank > 0 ? {
+                    boxShadow: `0 0 ${20 - auraRank * 4}px ${chainColors.glow}, 0 0 ${40 - auraRank * 8}px ${chainColors.glow}`,
+                    border: `1px solid ${chainColors.primary}40`,
+                    background: `linear-gradient(135deg, ${chainColors.primary}10, ${chainColors.secondary}08)`,
+                  } : {})
+                }}
+              >
+                {auraRank > 0 && (
+                  <div 
+                    className="aura-badge"
+                    style={{
+                      position: 'absolute',
+                      top: '-8px',
+                      right: '-8px',
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      background: `linear-gradient(135deg, ${chainColors.primary}, ${chainColors.secondary})`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontWeight: 900,
+                      color: auraRank === 3 && chain === 'BRG' ? '#000' : '#fff',
+                      boxShadow: `0 2px 8px ${chainColors.glow}`,
+                      animation: 'pulseAura 2s ease-in-out infinite',
+                      zIndex: 10
+                    }}
+                    data-testid={`aura-badge-${msg.id}`}
+                  >
+                    {auraRank}
+                  </div>
+                )}
+                
+                <div style={{ fontWeight: 700, fontSize: '12px', color: chainColors.primary, marginBottom: '4px' }}>
+                  {msg.username}
+                </div>
+                <div>{msg.message}</div>
+                
+                {/* Reaction counts display */}
+                {stats && (stats.totalLikes > 0 || stats.totalDislikes > 0) && (
+                  <div 
+                    style={{
+                      display: 'flex',
+                      gap: '12px',
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      opacity: 0.8
+                    }}
+                  >
+                    {stats.totalLikes > 0 && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: chainColors.primary }}>
+                        <ThumbsUp size={12} />
+                        <span className={isReacting ? 'count-animate' : ''}>{stats.totalLikes}</span>
+                      </span>
+                    )}
+                    {stats.totalDislikes > 0 && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#ff6b6b' }}>
+                        <ThumbsDown size={12} />
+                        <span className={isReacting ? 'count-animate' : ''}>{stats.totalDislikes}</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+                
+                {/* Reaction buttons - show on tap */}
+                <div 
+                  className={`reaction-buttons ${isActive ? 'visible' : ''}`}
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    right: '-50px',
+                    transform: 'translateY(-50%)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    opacity: isActive ? 1 : 0,
+                    visibility: isActive ? 'visible' : 'hidden',
+                    transition: 'all 0.25s ease',
+                    zIndex: 20
+                  }}
+                >
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'like'); }}
+                    disabled={isReacting}
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      border: `2px solid ${chainColors.primary}`,
+                      background: stats?.userReaction === 'like' ? chainColors.primary : 'rgba(0,0,0,0.6)',
+                      color: stats?.userReaction === 'like' ? '#fff' : chainColors.primary,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s ease',
+                      backdropFilter: 'blur(4px)'
+                    }}
+                    data-testid={`button-like-${msg.id}`}
+                  >
+                    <ThumbsUp size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, 'dislike'); }}
+                    disabled={isReacting}
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      border: '2px solid #ff6b6b',
+                      background: stats?.userReaction === 'dislike' ? '#ff6b6b' : 'rgba(0,0,0,0.6)',
+                      color: stats?.userReaction === 'dislike' ? '#fff' : '#ff6b6b',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s ease',
+                      backdropFilter: 'blur(4px)'
+                    }}
+                    data-testid={`button-dislike-${msg.id}`}
+                  >
+                    <ThumbsDown size={16} />
+                  </button>
+                </div>
               </div>
-              <div>{msg.message}</div>
-            </div>
-          ))}
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
 

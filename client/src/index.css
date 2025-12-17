@@ -772,6 +772,61 @@ body.eth-chain .glassy-btn.connected {
   background: rgba(255,255,255,0.04);
   font-size: 14px;
   word-break: break-word;
+  overflow: visible;
+}
+
+.chat-msg.has-aura {
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+/* Reaction button animations */
+.reaction-buttons button:hover {
+  transform: scale(1.15);
+}
+
+.reaction-buttons button:active {
+  transform: scale(0.95);
+}
+
+/* Count animation on reaction */
+.count-animate {
+  animation: countPop 0.4s ease-out;
+}
+
+@keyframes countPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.5); color: #fff; }
+  100% { transform: scale(1); }
+}
+
+/* Aura badge pulse */
+@keyframes pulseAura {
+  0%, 100% { 
+    transform: scale(1);
+    box-shadow: 0 2px 8px currentColor;
+  }
+  50% { 
+    transform: scale(1.1);
+    box-shadow: 0 4px 16px currentColor;
+  }
+}
+
+/* Glow pulse for top messages */
+@keyframes glowPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.1); }
+}
+
+/* Slide in animation for floating elements */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .chat-input {
