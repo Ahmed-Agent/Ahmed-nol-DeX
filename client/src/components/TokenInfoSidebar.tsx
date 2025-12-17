@@ -38,15 +38,15 @@ function Sparkline({ trend, change, isLoading, priceHistory }: { trend: 'up' | '
   
   // Use actual price history from server (2-minute intervals), or generate synthetic data if unavailable
   const sparklineData = useMemo(() => {
-    if (priceHistory && priceHistory.length > 0) {
+    if (priceHistory && priceHistory.length >= 3) {
       // Use real historical price data from server (follows 2-minute sequence)
       return priceHistory;
     }
     
-    // Fallback: Generate realistic hourly price data if no history available
-    const points = 24; // 24 hours of data
+    // Fallback: Generate realistic price data with 60 points (good resolution for sparkline)
+    const points = 60; // More granular data for better line visibility
     const changePercent = change ?? (trend === 'up' ? 2.5 : -2.5);
-    const volatility = Math.abs(changePercent) * 0.15;
+    const volatility = Math.abs(changePercent) * 0.2;
     
     const data: number[] = [];
     let currentPrice = 100;
@@ -54,22 +54,27 @@ function Sparkline({ trend, change, isLoading, priceHistory }: { trend: 'up' | '
     const priceStep = (targetPrice - currentPrice) / points;
     
     for (let i = 0; i < points; i++) {
-      const hour = i;
-      const marketHoursMultiplier = (hour >= 9 && hour <= 16) ? 1.5 : 0.8;
-      const asiaOpen = hour === 1 ? 1.3 : 1;
-      const europeOpen = hour === 8 ? 1.4 : 1;
-      const usOpen = hour === 14 ? 1.5 : 1;
+      const progressRatio = i / points;
+      const noise = (Math.random() - 0.5) * volatility * (1 + Math.sin(progressRatio * Math.PI) * 0.5);
+      const trend_component = priceStep + noise;
+      const meanReversion = (currentPrice - (100 + priceStep * i)) * 0.05;
       
-      const noise = (Math.random() - 0.5) * volatility * marketHoursMultiplier * asiaOpen * europeOpen * usOpen;
-      const reversion = (currentPrice - (100 + priceStep * i)) * 0.1;
-      
-      currentPrice = currentPrice + priceStep + noise - reversion;
+      currentPrice = Math.max(currentPrice + trend_component - meanReversion, 50); // Keep price positive
       data.push(currentPrice);
     }
     
+    // Apply smoothing filter for natural curve
     const smoothed = data.map((val, i) => {
-      if (i === 0 || i === data.length - 1) return val;
-      return (data[i - 1] + val + data[i + 1]) / 3;
+      if (i === 0) return val;
+      if (i === data.length - 1) return val;
+      const window = i > 2 && i < data.length - 3 ? 5 : 3; // Larger smoothing window in middle
+      let sum = 0;
+      let count = 0;
+      for (let j = Math.max(0, i - Math.floor(window / 2)); j <= Math.min(data.length - 1, i + Math.floor(window / 2)); j++) {
+        sum += data[j];
+        count++;
+      }
+      return sum / count;
     });
     
     return smoothed;
