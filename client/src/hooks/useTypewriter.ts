@@ -13,6 +13,7 @@ export function useTypewriter(text: string, typingSpeed: number = 100, deletingS
           setDisplayText(text.slice(0, displayText.length + 1));
         }, typingSpeed);
       } else {
+        // Pause after typing completes
         timeout = setTimeout(() => {
           setIsDeleting(true);
         }, pauseDuration);
@@ -23,7 +24,10 @@ export function useTypewriter(text: string, typingSpeed: number = 100, deletingS
           setDisplayText(text.slice(0, displayText.length - 1));
         }, deletingSpeed);
       } else {
-        setIsDeleting(false);
+        // Add pause before starting new cycle to avoid glitch
+        timeout = setTimeout(() => {
+          setIsDeleting(false);
+        }, 300);
       }
     }
 
