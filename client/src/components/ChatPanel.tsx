@@ -86,7 +86,9 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
       }, 300);
 
       return () => {
-        unsubscribe();
+        if (unsubscribe) {
+          unsubscribe();
+        }
         clearInterval(pollInterval);
       };
     }
