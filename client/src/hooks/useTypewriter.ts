@@ -37,5 +37,5 @@ export function useTypewriter(texts: string | string[], typingSpeed: number = 60
     return () => clearTimeout(timeout);
   }, [displayText, isDeleting, currentText, textIndex, textArray, typingSpeed, deletingSpeed, pauseDuration]);
 
-  return displayText + '|';
+  return displayText;
 }
