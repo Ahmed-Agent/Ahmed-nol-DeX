@@ -291,23 +291,23 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
           </div>
         )}
 
-        {/* Remaining messages indicator */}
-        {chatStatus && (
+        {/* Show limit reached notification when limit hit */}
+        {chatStatus && chatStatus.remainingMessages === 0 && !rateLimitMessage && (
           <div 
             style={{
-              padding: '6px 10px',
+              padding: '10px 12px',
               marginBottom: '8px',
-              fontSize: '11px',
-              color: chatStatus.remainingMessages > 0 ? 'rgba(92,234,196,0.8)' : 'rgba(255,180,70,0.8)',
+              background: 'linear-gradient(135deg, rgba(255,180,70,0.15), rgba(255,140,50,0.1))',
+              border: '1px solid rgba(255,180,70,0.3)',
+              borderRadius: '8px',
+              fontSize: '12px',
+              color: '#ffb446',
               textAlign: 'center',
-              opacity: 0.8
+              animation: 'fadeIn 0.3s ease'
             }}
-            data-testid="text-remaining-messages"
+            data-testid="notification-daily-limit-reached"
           >
-            {chatStatus.remainingMessages > 0 
-              ? `${chatStatus.remainingMessages}/${chatStatus.maxMessagesPerDay} messages left today`
-              : `Daily limit reached - Resets at ${chatStatus.resetTime}`
-            }
+            Daily limit reached - Resets at {chatStatus.resetTime}
           </div>
         )}
 

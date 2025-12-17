@@ -1343,7 +1343,7 @@ body.eth-chain .glassy-btn.connected {
 .token-info-button {
   position: fixed;
   bottom: 100px;
-  right: 18px;
+  left: 18px;
   width: 48px;
   height: 48px;
   display: flex;
@@ -1364,7 +1364,7 @@ body.eth-chain .glassy-btn.connected {
   background: linear-gradient(135deg, rgba(92,234,212,0.2), rgba(76,224,193,0.15));
   border-color: rgba(92,234,212,0.4);
   box-shadow: 0 6px 20px rgba(92,234,212,0.25);
-  transform: translateX(-2px);
+  transform: translateX(2px);
 }
 
 .token-info-button:active {
@@ -1386,7 +1386,7 @@ body.eth-chain .glassy-btn.connected {
 .token-info-container {
   position: fixed;
   bottom: 160px;
-  right: 18px;
+  left: 18px;
   width: auto;
   max-width: 70vw;
   padding: 12px;
