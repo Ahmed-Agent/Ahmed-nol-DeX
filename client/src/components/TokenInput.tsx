@@ -160,7 +160,11 @@ export function TokenInput({
     }, 150);
   };
 
-  const handleFocus = () => {
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Move cursor to end of input
+    if (e.target.value) {
+      e.target.setSelectionRange(e.target.value.length, e.target.value.length);
+    }
     handleSearch(searchQuery.trim().toLowerCase());
   };
 
@@ -316,6 +320,12 @@ export function TokenInput({
             placeholder={isEstimate ? 'Estimate' : 'Amount'}
             value={amount}
             onChange={(e) => onAmountChange(e.target.value)}
+            onFocus={(e) => {
+              // Move cursor to end of amount input
+              if (e.target.value) {
+                e.target.setSelectionRange(e.target.value.length, e.target.value.length);
+              }
+            }}
             readOnly={isEstimate}
             disabled={disabled}
             step="any"

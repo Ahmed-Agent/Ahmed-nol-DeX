@@ -168,6 +168,25 @@ export function TokenInfoSidebar({
 }: TokenInfoSidebarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
+  const [currentSource, setCurrentSource] = useState<'cmc' | 'coingecko'>('cmc');
+  const [timeInCycle, setTimeInCycle] = useState(0);
+
+  // Track which source is active and time in 2-minute cycle
+  useEffect(() => {
+    const updateSource = () => {
+      const now = Date.now();
+      const cycleTime = now % 120000; // 2 minutes
+      setTimeInCycle(Math.floor(cycleTime / 1000)); // Seconds in current cycle
+      
+      // Alternate every 2 minutes
+      const cycles = Math.floor(now / 120000);
+      setCurrentSource(cycles % 2 === 0 ? 'cmc' : 'coingecko');
+    };
+    
+    updateSource();
+    const interval = setInterval(updateSource, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const hasTokens = fromToken || toToken;
 
@@ -243,7 +262,15 @@ export function TokenInfoSidebar({
                 <div>Vol: {fromVolume24h !== null && fromVolume24h !== undefined ? (fromVolume24h > 1000000 ? `$${(fromVolume24h / 1000000).toFixed(1)}M` : `$${(fromVolume24h / 1000).toFixed(0)}K`) : <LoadingPulse width={30} height={8} />}</div>
                 <div>Cap: {fromMarketCap !== null && fromMarketCap !== undefined ? (fromMarketCap > 1000000 ? `$${(fromMarketCap / 1000000).toFixed(1)}M` : `$${(fromMarketCap / 1000).toFixed(0)}K`) : <LoadingPulse width={30} height={8} />}</div>
               </div>
-              <Sparkline trend={(fromChange24h ?? 0) >= 0 ? 'up' : 'down'} change={fromChange24h} isLoading={fromPriceUsd === null} priceHistory={fromPriceHistory} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                <Sparkline trend={(fromChange24h ?? 0) >= 0 ? 'up' : 'down'} change={fromChange24h} isLoading={fromPriceUsd === null} priceHistory={fromPriceHistory} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '8px', opacity: 0.6 }}>
+                  <div title={currentSource === 'cmc' ? 'CoinMarketCap' : 'CoinGecko'} style={{ width: '10px', height: '10px', borderRadius: '50%', background: currentSource === 'cmc' ? '#17f0cb' : '#ef7615', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '6px', color: '#000', fontWeight: 'bold' }}>
+                    {currentSource === 'cmc' ? 'C' : 'G'}
+                  </div>
+                  <span>{timeInCycle}s</span>
+                </div>
+              </div>
             </div>
           )}
           {toToken && (
@@ -265,7 +292,15 @@ export function TokenInfoSidebar({
                 <div>Vol: {toVolume24h !== null && toVolume24h !== undefined ? (toVolume24h > 1000000 ? `$${(toVolume24h / 1000000).toFixed(1)}M` : `$${(toVolume24h / 1000).toFixed(0)}K`) : <LoadingPulse width={30} height={8} />}</div>
                 <div>Cap: {toMarketCap !== null && toMarketCap !== undefined ? (toMarketCap > 1000000 ? `$${(toMarketCap / 1000000).toFixed(1)}M` : `$${(toMarketCap / 1000).toFixed(0)}K`) : <LoadingPulse width={30} height={8} />}</div>
               </div>
-              <Sparkline trend={(toChange24h ?? 0) >= 0 ? 'up' : 'down'} change={toChange24h} isLoading={toPriceUsd === null} priceHistory={toPriceHistory} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                <Sparkline trend={(toChange24h ?? 0) >= 0 ? 'up' : 'down'} change={toChange24h} isLoading={toPriceUsd === null} priceHistory={toPriceHistory} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '8px', opacity: 0.6 }}>
+                  <div title={currentSource === 'cmc' ? 'CoinMarketCap' : 'CoinGecko'} style={{ width: '10px', height: '10px', borderRadius: '50%', background: currentSource === 'cmc' ? '#17f0cb' : '#ef7615', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '6px', color: '#000', fontWeight: 'bold' }}>
+                    {currentSource === 'cmc' ? 'C' : 'G'}
+                  </div>
+                  <span>{timeInCycle}s</span>
+                </div>
+              </div>
             </div>
           )}
         </div>
