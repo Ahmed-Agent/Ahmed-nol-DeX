@@ -1054,11 +1054,21 @@ export async function registerRoutes(
     });
   });
 
-  // ====== MESSAGE REACTIONS WITH HOURLY RANKING (SUPABASE PERSISTENT) ======
+  // ====== MESSAGE REACTIONS WITH HOURLY RANKING (SUPABASE PERSISTENT WITH IN-MEMORY FALLBACK) ======
   // Get current hour start timestamp (for hourly ranking)
   function getCurrentHourStart(): number {
     return Math.floor(Date.now() / (60 * 60 * 1000)) * (60 * 60 * 1000);
   }
+
+  // In-memory fallback for reactions (when Supabase table doesn't exist yet)
+  interface InMemoryReaction {
+    messageId: string;
+    userIp: string;
+    type: 'like' | 'dislike';
+    timestamp: number;
+    hourBucket: number;
+  }
+  const inMemoryReactions: InMemoryReaction[] = [];
 
   // Helper: Create reactions table if it doesn't exist (run once on startup)
   async function ensureReactionsTable(): Promise<boolean> {
@@ -1068,20 +1078,25 @@ export async function registerRoutes(
     
     // Try to query the table to see if it exists
     try {
-      await fetch(`${supabaseUrl}/rest/v1/message_reactions?select=id&limit=1`, {
+      const resp = await fetch(`${supabaseUrl}/rest/v1/message_reactions?select=id&limit=1`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
-      return true;
+      return resp.ok;
     } catch {
-      console.warn('[Reactions] Table may not exist. Manual creation needed.');
+      console.warn('[Reactions] Table may not exist. Using in-memory fallback.');
       return false;
     }
   }
 
   // Initialize reactions table check
-  ensureReactionsTable();
+  let supabaseReactionsAvailable = false;
+  ensureReactionsTable().then(available => {
+    supabaseReactionsAvailable = available;
+    if (available) console.log('[Reactions] Using Supabase persistence');
+    else console.log('[Reactions] Using in-memory fallback');
+  });
 
-  // React to a message (like/dislike) - uses Supabase for persistence
+  // React to a message (like/dislike) - uses Supabase or in-memory fallback
   app.post("/api/chat/react", async (req, res) => {
     try {
       const ip = getClientIp(req);
@@ -1089,6 +1104,25 @@ export async function registerRoutes(
 
       if (!messageId || !['like', 'dislike'].includes(reactionType)) {
         return res.status(400).json({ success: false, error: 'Invalid request' });
+      }
+
+      // Use in-memory fallback if Supabase not available
+      if (!supabaseReactionsAvailable) {
+        const hourBucket = getCurrentHourStart();
+        const existing = inMemoryReactions.find(r => r.messageId === messageId && r.userIp === ip && r.hourBucket === hourBucket);
+        
+        if (existing) {
+          if (existing.type === reactionType) {
+            inMemoryReactions.splice(inMemoryReactions.indexOf(existing), 1);
+            return res.json({ success: true, action: 'removed' });
+          } else {
+            existing.type = reactionType;
+            return res.json({ success: true, action: 'changed' });
+          }
+        } else {
+          inMemoryReactions.push({ messageId, userIp: ip, type: reactionType, timestamp: Date.now(), hourBucket });
+          return res.json({ success: true, action: 'added' });
+        }
       }
 
       const supabaseUrl = getSupabaseUrl();
@@ -1112,9 +1146,20 @@ export async function registerRoutes(
       );
 
       if (!checkResp.ok) {
-        // Table might not exist, use in-memory fallback
-        console.warn('[Reactions] Supabase query failed, table may not exist');
-        return res.status(503).json({ success: false, error: 'Reactions table not available' });
+        console.warn('[Reactions] Supabase query failed, falling back to in-memory');
+        supabaseReactionsAvailable = false;
+        const hourBucket = getCurrentHourStart();
+        const existing = inMemoryReactions.find(r => r.messageId === messageId && r.userIp === ip && r.hourBucket === hourBucket);
+        if (existing) {
+          if (existing.type === reactionType) {
+            inMemoryReactions.splice(inMemoryReactions.indexOf(existing), 1);
+          } else {
+            existing.type = reactionType;
+          }
+        } else {
+          inMemoryReactions.push({ messageId, userIp: ip, type: reactionType, timestamp: Date.now(), hourBucket });
+        }
+        return res.json({ success: true, action: 'added' });
       }
 
       const existing = await checkResp.json();
@@ -1164,7 +1209,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get reaction stats for multiple messages - uses Supabase
+  // Get reaction stats for multiple messages - uses Supabase or in-memory fallback
   app.post("/api/chat/reactions", async (req, res) => {
     try {
       const { messageIds } = req.body;
@@ -1174,11 +1219,40 @@ export async function registerRoutes(
         return res.json({ success: true, stats: {}, top3: [], hourStart: getCurrentHourStart() });
       }
 
+      const hourStart = getCurrentHourStart();
+      const stats: Record<string, { likes: number; dislikes: number; totalLikes: number; totalDislikes: number; userReaction: 'like' | 'dislike' | null }> = {};
+
+      // Use in-memory fallback if Supabase not available
+      if (!supabaseReactionsAvailable) {
+        for (const msgId of messageIds) {
+          const msgReactions = inMemoryReactions.filter(r => r.messageId === msgId);
+          const currentHourReactions = msgReactions.filter(r => r.hourBucket === hourStart);
+          const userReaction = msgReactions.find(r => r.userIp === ip);
+          
+          stats[msgId] = {
+            likes: currentHourReactions.filter(r => r.type === 'like').length,
+            dislikes: currentHourReactions.filter(r => r.type === 'dislike').length,
+            totalLikes: msgReactions.filter(r => r.type === 'like').length,
+            totalDislikes: msgReactions.filter(r => r.type === 'dislike').length,
+            userReaction: userReaction ? userReaction.type : null
+          };
+        }
+        
+        const ranked = Object.entries(stats)
+          .filter(([_, s]) => s.likes > 0)
+          .sort((a, b) => b[1].likes - a[1].likes)
+          .slice(0, 3)
+          .map(([id]) => id);
+
+        console.log(`[Reactions] In-memory: Top 3 messages: ${ranked.join(', ')}`);
+        return res.json({ success: true, stats, top3: ranked, hourStart });
+      }
+
       const supabaseUrl = getSupabaseUrl();
       const supabaseKey = getSupabaseAnonKey();
       
       if (!supabaseUrl || !supabaseKey) {
-        return res.json({ success: true, stats: {}, top3: [], hourStart: getCurrentHourStart() });
+        return res.json({ success: true, stats: {}, top3: [], hourStart });
       }
 
       const headers = {
@@ -1194,16 +1268,31 @@ export async function registerRoutes(
       );
 
       if (!reactionsResp.ok) {
-        console.warn('[Reactions] Fetch failed, returning empty stats');
-        return res.json({ success: true, stats: {}, top3: [], hourStart: getCurrentHourStart() });
+        console.warn('[Reactions] Supabase fetch failed, falling back to in-memory');
+        supabaseReactionsAvailable = false;
+        for (const msgId of messageIds) {
+          const msgReactions = inMemoryReactions.filter(r => r.messageId === msgId);
+          const currentHourReactions = msgReactions.filter(r => r.hourBucket === hourStart);
+          const userReaction = msgReactions.find(r => r.userIp === ip);
+          
+          stats[msgId] = {
+            likes: currentHourReactions.filter(r => r.type === 'like').length,
+            dislikes: currentHourReactions.filter(r => r.type === 'dislike').length,
+            totalLikes: msgReactions.filter(r => r.type === 'like').length,
+            totalDislikes: msgReactions.filter(r => r.type === 'dislike').length,
+            userReaction: userReaction ? userReaction.type : null
+          };
+        }
+        const ranked = Object.entries(stats)
+          .filter(([_, s]) => s.likes > 0)
+          .sort((a, b) => b[1].likes - a[1].likes)
+          .slice(0, 3)
+          .map(([id]) => id);
+        return res.json({ success: true, stats, top3: ranked, hourStart });
       }
 
       const reactions = await reactionsResp.json();
-      const hourStart = getCurrentHourStart();
       const hourStartISO = new Date(hourStart).toISOString();
-
-      // Calculate stats for each message
-      const stats: Record<string, { likes: number; dislikes: number; totalLikes: number; totalDislikes: number; userReaction: 'like' | 'dislike' | null }> = {};
 
       for (const msgId of messageIds) {
         const msgReactions = reactions.filter((r: any) => r.message_id === msgId);
