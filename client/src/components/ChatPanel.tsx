@@ -38,8 +38,8 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
   const sidebarRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLDivElement>(null);
   
-  const chatPlaceholder = "Drop your alpha...";
-  const typewriterChatPlaceholder = useTypewriter(chatPlaceholder, 100, 50, 2000);
+  const chatPlaceholders = ["Drop your alpha...", "Share your insights...", "Tell the community..."];
+  const typewriterChatPlaceholder = useTypewriter(chatPlaceholders, 100, 50, 1800);
 
   // Fetch chat status on mount and when chat opens
   useEffect(() => {
@@ -308,7 +308,7 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
         <div className="chat-input">
           <input
             type="text"
-            placeholder={typewriterChatPlaceholder || chatPlaceholder}
+            placeholder={typewriterChatPlaceholder}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}

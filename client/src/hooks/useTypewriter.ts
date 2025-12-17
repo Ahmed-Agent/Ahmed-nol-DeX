@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 
-export function useTypewriter(text: string, typingSpeed: number = 100, deletingSpeed: number = 50, pauseDuration: number = 1500) {
+export function useTypewriter(texts: string | string[], typingSpeed: number = 100, deletingSpeed: number = 50, pauseDuration: number = 1500) {
+  const textArray = Array.isArray(texts) ? texts : [texts];
   const [displayText, setDisplayText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [textIndex, setTextIndex] = useState(0);
+  const currentText = textArray[textIndex];
 
   useEffect(() => {
     let timeout: NodeJS.Timeout;
 
     if (!isDeleting) {
-      if (displayText.length < text.length) {
+      if (displayText.length < currentText.length) {
         timeout = setTimeout(() => {
-          setDisplayText(text.slice(0, displayText.length + 1));
+          setDisplayText(currentText.slice(0, displayText.length + 1));
         }, typingSpeed);
       } else {
         // Pause after typing completes
@@ -21,18 +24,18 @@ export function useTypewriter(text: string, typingSpeed: number = 100, deletingS
     } else {
       if (displayText.length > 0) {
         timeout = setTimeout(() => {
-          setDisplayText(text.slice(0, displayText.length - 1));
+          setDisplayText(currentText.slice(0, displayText.length - 1));
         }, deletingSpeed);
       } else {
-        // Add pause before starting new cycle to avoid glitch
-        timeout = setTimeout(() => {
-          setIsDeleting(false);
-        }, 300);
+        // Move to next text or loop back to start
+        const nextIndex = (textIndex + 1) % textArray.length;
+        setTextIndex(nextIndex);
+        setIsDeleting(false);
       }
     }
 
     return () => clearTimeout(timeout);
-  }, [displayText, isDeleting, text, typingSpeed, deletingSpeed, pauseDuration]);
+  }, [displayText, isDeleting, currentText, textIndex, textArray, typingSpeed, deletingSpeed, pauseDuration]);
 
   return displayText;
 }
