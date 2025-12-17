@@ -168,10 +168,17 @@ export function TokenInput({
   };
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    // Always move cursor to end of input
-    const length = e.target.value.length;
-    e.target.setSelectionRange(length, length);
+    // Move cursor to end of input immediately
+    e.target.setSelectionRange(e.target.value.length, e.target.value.length);
     handleSearch(searchQuery.trim().toLowerCase());
+  };
+
+  const handleInputClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    // Ensure cursor is at end on first click
+    const target = e.currentTarget;
+    setTimeout(() => {
+      target.setSelectionRange(target.value.length, target.value.length);
+    }, 0);
   };
 
   const handleBlur = () => {
@@ -302,6 +309,7 @@ export function TokenInput({
             value={searchQuery}
             onChange={handleInputChange}
             onFocus={handleFocus}
+            onClick={handleInputClick}
             onBlur={handleBlur}
             style={{
               padding: '10px 8px',

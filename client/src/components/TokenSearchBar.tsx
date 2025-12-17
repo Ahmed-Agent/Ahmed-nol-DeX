@@ -27,8 +27,8 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const placeholderTexts = chain === 'BRG' 
-    ? ['Search by ETH & POL...', 'Search by contract address...']
-    : [`Search by ${chain} tokens...`, `Search by contract address...`];
+    ? ['Search ETH & POL...', 'Search contract address...']
+    : [`Search ${chain} tokens...`, `Search contract address...`];
   const typewriterPlaceholder = useTypewriter(placeholderTexts, 60, 30, 900);
 
   const handleSearch = useCallback(async (query: string) => {
