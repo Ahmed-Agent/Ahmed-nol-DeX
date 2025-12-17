@@ -194,7 +194,7 @@ export function TokenInput({
     if (selectedToken) {
       setSearchQuery(selectedToken.symbol.toUpperCase());
     }
-  }, [selectedToken]);
+  }, [selectedToken?.address]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
