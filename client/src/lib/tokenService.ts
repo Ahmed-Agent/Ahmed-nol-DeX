@@ -26,7 +26,8 @@ let lastSourceRotation = Date.now();
 
 const tokenListByChain = new Map<number, Token[]>();
 const tokenMapByChain = new Map<number, Map<string, Token>>();
-const statsMapByChain = new Map<number, Map<string, TokenStats>>();
+const statsMapByChain = new Map<number, Map<string, TokenStats>>(); // Symbol/Name lookup (legacy)
+const statsMapByAddressChain = new Map<number, Map<string, TokenStats>>(); // Address lookup (primary)
 const priceCache = new Map<string, { price: number | null; ts: number }>();
 
 const DARK_SVG_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhlaWdodD0iMjgiIHZpZXdCb3g9IjAgMCAyOCAyOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNCIgY3k9IjE0IiByPSIxNCIgZmlsbD0iIzJBMkEzQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjODg4IiBmb250LXNpemU9IjEyIj4/PC90ZXh0Pjwvc3ZnPg==';
@@ -234,6 +235,16 @@ export async function loadTokensForChain(chainId: number): Promise<void> {
 
     const statsMap = await fetchMarketData();
     statsMapByChain.set(chainId, statsMap);
+    
+    // Build address-based stats map to avoid symbol collisions
+    const statsMapByAddress = new Map<string, TokenStats>();
+    tokenList.forEach((token) => {
+      const tokenStats = statsMap.get(low(token.symbol)) || statsMap.get(low(token.name));
+      if (tokenStats) {
+        statsMapByAddress.set(token.address, tokenStats);
+      }
+    });
+    statsMapByAddressChain.set(chainId, statsMapByAddress);
 
     console.log(`Loaded ${tokenList.length} tokens for chain ${chainId}`);
   } catch (e) {
@@ -258,6 +269,13 @@ export function getTokenMap(chainId?: number): Map<string, Token> {
 export function getCgStatsMap(chainId?: number): Map<string, TokenStats> {
   const cid = chainId ?? config.chainId;
   return statsMapByChain.get(cid) || new Map();
+}
+
+export function getStatsByTokenAddress(address: string, chainId?: number): TokenStats | null {
+  const cid = chainId ?? config.chainId;
+  const addr = low(address);
+  const statsMapByAddress = statsMapByAddressChain.get(cid);
+  return statsMapByAddress?.get(addr) || null;
 }
 
 export function getPlaceholderImage(): string {
@@ -424,7 +442,6 @@ export async function getTokenPriceUSD(address: string, decimals = 18, chainId?:
 export async function searchTokens(query: string, chainId?: number): Promise<Token[]> {
   const cid = chainId ?? config.chainId;
   const tokenList = getTokenList(cid);
-  const statsMap = getCgStatsMap(cid);
   
   const q = query.toLowerCase();
   const matches = tokenList.filter((t) => {
@@ -434,7 +451,7 @@ export async function searchTokens(query: string, chainId?: number): Promise<Tok
   });
 
   const withStats = matches.map((t) => {
-    const stats = statsMap.get(low(t.symbol)) || statsMap.get(low(t.name));
+    const stats = getStatsByTokenAddress(t.address, cid);
     const startBonus = (t.symbol.toLowerCase().startsWith(q) || t.name.toLowerCase().startsWith(q)) ? 1e15 : 0;
     
     const marketCap = stats?.marketCap || (stats?.price && stats?.volume24h ? (stats.price * stats.volume24h * 0.01) : 0);
@@ -474,18 +491,13 @@ export async function searchTokens(query: string, chainId?: number): Promise<Tok
 export function getTopTokens(limit = 14, chainId?: number): { token: Token; stats: TokenStats | null }[] {
   const cid = chainId ?? config.chainId;
   const tokenList = getTokenList(cid);
-  const statsMap = getCgStatsMap(cid);
   
   const candidates = tokenList.filter((t) => {
-    const s = low(t.symbol);
-    const n = low(t.name);
-    return statsMap.has(s) || statsMap.has(n);
+    return getStatsByTokenAddress(t.address, cid) !== null;
   });
 
   const withStats = candidates.map((t) => {
-    const s = low(t.symbol);
-    const n = low(t.name);
-    const stat = statsMap.get(s) || statsMap.get(n) || null;
+    const stat = getStatsByTokenAddress(t.address, cid);
     return { token: t, stats: stat };
   });
 
@@ -636,5 +648,16 @@ export async function refreshMarketData(chainId?: number): Promise<void> {
   const cid = chainId ?? config.chainId;
   const statsMap = await fetchMarketData();
   statsMapByChain.set(cid, statsMap);
+  
+  // Build address-based stats map for accurate lookups
+  const statsMapByAddress = new Map<string, TokenStats>();
+  const tokenList = getTokenList(cid);
+  tokenList.forEach((token) => {
+    const tokenStats = statsMap.get(low(token.symbol)) || statsMap.get(low(token.name));
+    if (tokenStats) {
+      statsMapByAddress.set(token.address, tokenStats);
+    }
+  });
+  statsMapByAddressChain.set(cid, statsMapByAddress);
   console.log(`Refreshed market data for chain ${cid}, source: ${currentDataSource}`);
 }
