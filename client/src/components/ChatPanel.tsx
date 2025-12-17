@@ -86,12 +86,14 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
       }, 300);
 
       return () => {
-
-      
+        unsubscribe();
+        clearInterval(pollInterval);
+      };
     }
-  }, [isOpe
-      eEffect(() => {
-messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [isOpen, username]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
@@ -283,7 +285,3 @@ messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     </>
   );
 }
-
-function VieweEffect(arg0: () => void, arg1: Message[][]) {
-          throw new Error('Function not implemented.');
-      }
