@@ -71,7 +71,10 @@ export default function Home() {
   const [isBridgeMode, setIsBridgeMode] = useState(false);
   const [isRadarOpen, setIsRadarOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [fromPriceHistory, setFromPriceHistory] = useState<number[]>([]);
+  const [toPriceHistory, setToPriceHistory] = useState<number[]>([]);
   const previousChainRef = useRef<ChainType>(chain);
+  const priceHistoryRef = useRef<{ from: number[]; to: number[] }>({ from: [], to: [] });
 
   // Determine if this is a bridge operation (cross-chain in BRG mode)
   const getTokenChainId = (token: ExtendedToken | null): number => {
@@ -183,24 +186,38 @@ export default function Home() {
       try {
         const price = await getTokenPriceUSD(fromToken.address, fromToken.decimals, fromChainId);
         setFromPriceUsd(price);
+        // Track price history for sparklines (following 2-minute server sequence)
+        if (price !== null) {
+          priceHistoryRef.current.from = [...priceHistoryRef.current.from.slice(-59), price]; // Keep last 60 points (2 hours at 2-min intervals)
+          setFromPriceHistory([...priceHistoryRef.current.from]);
+        }
       } catch (e) {
         console.error("Failed to fetch price for fromToken:", fromToken.address, e);
         setFromPriceUsd(null);
       }
     } else {
       setFromPriceUsd(null);
+      priceHistoryRef.current.from = [];
+      setFromPriceHistory([]);
     }
 
     if (toToken) {
       try {
         const price = await getTokenPriceUSD(toToken.address, toToken.decimals, toChainId);
         setToPriceUsd(price);
+        // Track price history for sparklines (following 2-minute server sequence)
+        if (price !== null) {
+          priceHistoryRef.current.to = [...priceHistoryRef.current.to.slice(-59), price]; // Keep last 60 points (2 hours at 2-min intervals)
+          setToPriceHistory([...priceHistoryRef.current.to]);
+        }
       } catch (e) {
         console.error("Failed to fetch price for toToken:", toToken.address, e);
         setToPriceUsd(null);
       }
     } else {
       setToPriceUsd(null);
+      priceHistoryRef.current.to = [];
+      setToPriceHistory([]);
     }
   }, [fromToken, toToken, chain]);
 
@@ -409,11 +426,11 @@ export default function Home() {
     return () => clearTimeout(debounce);
   }, [fromToken, toToken, fromAmount, slippage, chain]);
 
-  // Refresh prices periodically
+  // Refresh prices periodically - every 2 minutes to match server sequence
   useEffect(() => {
     const interval = setInterval(() => {
       fetchPrices();
-    }, 8000);
+    }, 120000); // 2 minutes - matches server's 2-minute alternating source sequence
 
     return () => clearInterval(interval);
   }, [fetchPrices]);
@@ -735,6 +752,8 @@ export default function Home() {
         toVolume24h={toToken ? (getStatsByTokenAddress(toToken.address, getTokenChainId(toToken))?.volume24h ?? null) : null}
         fromMarketCap={fromToken ? (getStatsByTokenAddress(fromToken.address, getTokenChainId(fromToken))?.marketCap ?? null) : null}
         toMarketCap={toToken ? (getStatsByTokenAddress(toToken.address, getTokenChainId(toToken))?.marketCap ?? null) : null}
+        fromPriceHistory={fromPriceHistory}
+        toPriceHistory={toPriceHistory}
         isRadarOpen={isRadarOpen}
         onRadarToggle={(open) => {
           setIsRadarOpen(open);

@@ -13,6 +13,8 @@ interface TokenInfoSidebarProps {
   toVolume24h?: number | null;
   fromMarketCap?: number | null;
   toMarketCap?: number | null;
+  fromPriceHistory?: number[];
+  toPriceHistory?: number[];
   isRadarOpen: boolean;
   onRadarToggle: (open: boolean) => void;
   isChatOpen: boolean;
@@ -29,51 +31,48 @@ function LoadingPulse({ width = 40, height = 12 }: { width?: number; height?: nu
   );
 }
 
-// Professional hourly sparkline with realistic trading patterns
-function Sparkline({ trend, change, isLoading }: { trend: 'up' | 'down'; change?: number | null; isLoading?: boolean }) {
+// Professional sparkline that follows actual 2-minute price history from server
+function Sparkline({ trend, change, isLoading, priceHistory }: { trend: 'up' | 'down'; change?: number | null; isLoading?: boolean; priceHistory?: number[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Generate realistic hourly price data (24 points = 24 hours)
-  const hourlyData = useMemo(() => {
+  // Use actual price history from server (2-minute intervals), or generate synthetic data if unavailable
+  const sparklineData = useMemo(() => {
+    if (priceHistory && priceHistory.length > 0) {
+      // Use real historical price data from server (follows 2-minute sequence)
+      return priceHistory;
+    }
+    
+    // Fallback: Generate realistic hourly price data if no history available
     const points = 24; // 24 hours of data
     const changePercent = change ?? (trend === 'up' ? 2.5 : -2.5);
-    const volatility = Math.abs(changePercent) * 0.15; // Volatility based on actual change
+    const volatility = Math.abs(changePercent) * 0.15;
     
-    // Generate realistic intraday pattern with volume spikes at market opens
     const data: number[] = [];
     let currentPrice = 100;
     const targetPrice = 100 + changePercent;
     const priceStep = (targetPrice - currentPrice) / points;
     
     for (let i = 0; i < points; i++) {
-      // Add realistic intraday patterns
       const hour = i;
-      
-      // Higher volatility during market hours (9-16 UTC for overlap)
       const marketHoursMultiplier = (hour >= 9 && hour <= 16) ? 1.5 : 0.8;
-      
-      // Volume spike patterns at market opens
       const asiaOpen = hour === 1 ? 1.3 : 1;
       const europeOpen = hour === 8 ? 1.4 : 1;
       const usOpen = hour === 14 ? 1.5 : 1;
       
       const noise = (Math.random() - 0.5) * volatility * marketHoursMultiplier * asiaOpen * europeOpen * usOpen;
-      
-      // Add mean reversion tendency
       const reversion = (currentPrice - (100 + priceStep * i)) * 0.1;
       
       currentPrice = currentPrice + priceStep + noise - reversion;
       data.push(currentPrice);
     }
     
-    // Smooth the data slightly for visual appeal
     const smoothed = data.map((val, i) => {
       if (i === 0 || i === data.length - 1) return val;
       return (data[i - 1] + val + data[i + 1]) / 3;
     });
     
     return smoothed;
-  }, [trend, change]);
+  }, [priceHistory, trend, change]);
   
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -89,7 +88,7 @@ function Sparkline({ trend, change, isLoading }: { trend: 'up' | 'down'; change?
     
     ctx.clearRect(0, 0, 100, 36);
     
-    const data = hourlyData;
+    const data = sparklineData;
     const min = Math.min(...data);
     const max = Math.max(...data);
     const range = max - min || 1;
@@ -141,7 +140,7 @@ function Sparkline({ trend, change, isLoading }: { trend: 'up' | 'down'; change?
     ctx.beginPath();
     ctx.arc(lastX, lastY, 2.5, 0, Math.PI * 2);
     ctx.fill();
-  }, [trend, hourlyData, isLoading]);
+  }, [trend, sparklineData, isLoading]);
   
   if (isLoading) {
     return <LoadingPulse width={100} height={36} />;
@@ -242,7 +241,7 @@ export function TokenInfoSidebar({
                 <div>Vol: {fromVolume24h !== null && fromVolume24h !== undefined ? (fromVolume24h > 1000000 ? `$${(fromVolume24h / 1000000).toFixed(1)}M` : `$${(fromVolume24h / 1000).toFixed(0)}K`) : <LoadingPulse width={30} height={8} />}</div>
                 <div>Cap: {fromMarketCap !== null && fromMarketCap !== undefined ? (fromMarketCap > 1000000 ? `$${(fromMarketCap / 1000000).toFixed(1)}M` : `$${(fromMarketCap / 1000).toFixed(0)}K`) : <LoadingPulse width={30} height={8} />}</div>
               </div>
-              <Sparkline trend={(fromChange24h ?? 0) >= 0 ? 'up' : 'down'} change={fromChange24h} isLoading={fromPriceUsd === null} />
+              <Sparkline trend={(fromChange24h ?? 0) >= 0 ? 'up' : 'down'} change={fromChange24h} isLoading={fromPriceUsd === null} priceHistory={fromPriceHistory} />
             </div>
           )}
           {toToken && (
@@ -264,7 +263,7 @@ export function TokenInfoSidebar({
                 <div>Vol: {toVolume24h !== null && toVolume24h !== undefined ? (toVolume24h > 1000000 ? `$${(toVolume24h / 1000000).toFixed(1)}M` : `$${(toVolume24h / 1000).toFixed(0)}K`) : <LoadingPulse width={30} height={8} />}</div>
                 <div>Cap: {toMarketCap !== null && toMarketCap !== undefined ? (toMarketCap > 1000000 ? `$${(toMarketCap / 1000000).toFixed(1)}M` : `$${(toMarketCap / 1000).toFixed(0)}K`) : <LoadingPulse width={30} height={8} />}</div>
               </div>
-              <Sparkline trend={(toChange24h ?? 0) >= 0 ? 'up' : 'down'} change={toChange24h} isLoading={toPriceUsd === null} />
+              <Sparkline trend={(toChange24h ?? 0) >= 0 ? 'up' : 'down'} change={toChange24h} isLoading={toPriceUsd === null} priceHistory={toPriceHistory} />
             </div>
           )}
         </div>
