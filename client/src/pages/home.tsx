@@ -6,7 +6,7 @@ import { TokenInput } from '@/components/TokenInput';
 import { SlippageControl } from '@/components/SlippageControl';
 import { TokenInfoSidebar } from '@/components/TokenInfoSidebar';
 import { showToast } from '@/components/Toast';
-import { Token, loadTokensAndMarkets, loadTokensForChain, getTokenPriceUSD, getTokenMap, getTokenByAddress, getCgStatsMap } from '@/lib/tokenService';
+import { Token, loadTokensAndMarkets, loadTokensForChain, getTokenPriceUSD, getTokenMap, getTokenByAddress, getCgStatsMap, getStatsByTokenAddress } from '@/lib/tokenService';
 import { getBestQuote, getLifiBridgeQuote, executeSwap, approveToken, checkAllowance, parseSwapError, QuoteResult } from '@/lib/swapService';
 import { config, ethereumConfig, low, isAddress } from '@/lib/config';
 import { useChain, ChainType, chainConfigs } from '@/lib/chainContext';
@@ -68,6 +68,8 @@ export default function Home() {
   const [userBalance, setUserBalance] = useState<string | null>(null);
   const [insufficientFunds, setInsufficientFunds] = useState(false);
   const [isBridgeMode, setIsBridgeMode] = useState(false);
+  const [isRadarOpen, setIsRadarOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const previousChainRef = useRef<ChainType>(chain);
 
   // Determine if this is a bridge operation (cross-chain in BRG mode)
@@ -726,12 +728,18 @@ export default function Home() {
         toToken={toToken} 
         fromPriceUsd={fromPriceUsd}
         toPriceUsd={toPriceUsd}
-        fromChange24h={fromToken ? (getCgStatsMap(getTokenChainId(fromToken)).get(low(fromToken.symbol))?.change ?? null) : null}
-        toChange24h={toToken ? (getCgStatsMap(getTokenChainId(toToken)).get(low(toToken.symbol))?.change ?? null) : null}
-        fromVolume24h={fromToken ? (getCgStatsMap(getTokenChainId(fromToken)).get(low(fromToken.symbol))?.volume24h ?? null) : null}
-        toVolume24h={toToken ? (getCgStatsMap(getTokenChainId(toToken)).get(low(toToken.symbol))?.volume24h ?? null) : null}
-        fromMarketCap={fromToken ? (getCgStatsMap(getTokenChainId(fromToken)).get(low(fromToken.symbol))?.marketCap ?? null) : null}
-        toMarketCap={toToken ? (getCgStatsMap(getTokenChainId(toToken)).get(low(toToken.symbol))?.marketCap ?? null) : null}
+        fromChange24h={fromToken ? (getStatsByTokenAddress(fromToken.address, getTokenChainId(fromToken))?.change ?? null) : null}
+        toChange24h={toToken ? (getStatsByTokenAddress(toToken.address, getTokenChainId(toToken))?.change ?? null) : null}
+        fromVolume24h={fromToken ? (getStatsByTokenAddress(fromToken.address, getTokenChainId(fromToken))?.volume24h ?? null) : null}
+        toVolume24h={toToken ? (getStatsByTokenAddress(toToken.address, getTokenChainId(toToken))?.volume24h ?? null) : null}
+        fromMarketCap={fromToken ? (getStatsByTokenAddress(fromToken.address, getTokenChainId(fromToken))?.marketCap ?? null) : null}
+        toMarketCap={toToken ? (getStatsByTokenAddress(toToken.address, getTokenChainId(toToken))?.marketCap ?? null) : null}
+        isRadarOpen={isRadarOpen}
+        onRadarToggle={(open) => {
+          setIsRadarOpen(open);
+          if (open) setIsChatOpen(false);
+        }}
+        isChatOpen={isChatOpen}
       />
     </div>
   );

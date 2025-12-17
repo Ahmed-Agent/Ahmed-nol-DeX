@@ -9,7 +9,12 @@ interface Message {
   created_at: string;
 }
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelProps = {}) {
   const { address, isConnected } = useAccount();
   // Use wagmi's useEnsName hook for ENS lookup on Ethereum mainnet
   const { data: ensName } = useEnsName({
@@ -17,7 +22,7 @@ export function ChatPanel() {
     chainId: 1, // Always query Ethereum mainnet for ENS
   });
   
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(externalIsOpen ?? false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [username, setUsername] = useState('');
@@ -45,6 +50,17 @@ export function ChatPanel() {
     }
   }, [isConnected, address, ensName]);
 
+  useEffect(() => {
+    if (externalIsOpen !== undefined) {
+      setIsOpen(externalIsOpen);
+    }
+  }, [externalIsOpen]);
+  
+  const handleToggle = (newState: boolean) => {
+    setIsOpen(newState);
+    onOpenChange?.(newState);
+  };
+  
   useEffect(() => {
     if (isOpen && username) {
       loadMessages();
@@ -89,7 +105,7 @@ export function ChatPanel() {
         !sidebarRef.current.contains(e.target as Node) &&
         !toggleRef.current.contains(e.target as Node)
       ) {
-        setIsOpen(false);
+        handleToggle(false);
       }
     };
 
@@ -107,11 +123,11 @@ export function ChatPanel() {
     setMessages(msgs);
   };
 
-  const handleToggle = () => {
+  const handleChatButtonClick = () => {
     if (!isOpen && !username) {
       setShowUsernameModal(true);
     } else {
-      setIsOpen(!isOpen);
+      handleToggle(!isOpen);
     }
   };
 
@@ -121,7 +137,7 @@ export function ChatPanel() {
       setUsername(name);
       localStorage.setItem('nola_chat_username', name);
       setShowUsernameModal(false);
-      setIsOpen(true);
+      handleToggle(true);
     }
   };
 
@@ -188,7 +204,7 @@ export function ChatPanel() {
       <div
         ref={toggleRef}
         className="chat-toggle"
-        onClick={handleToggle}
+        onClick={handleChatButtonClick}
         data-testid="button-chat-toggle"
       >
         Public Chat 🔘

@@ -13,6 +13,9 @@ interface TokenInfoSidebarProps {
   toVolume24h?: number | null;
   fromMarketCap?: number | null;
   toMarketCap?: number | null;
+  isRadarOpen: boolean;
+  onRadarToggle: (open: boolean) => void;
+  isChatOpen: boolean;
 }
 
 // Sparkline with accurate 2-min sequence pricing
@@ -107,8 +110,10 @@ export function TokenInfoSidebar({
   toVolume24h,
   fromMarketCap,
   toMarketCap,
+  isRadarOpen,
+  onRadarToggle,
+  isChatOpen,
 }: TokenInfoSidebarProps) {
-  const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
 
@@ -117,24 +122,30 @@ export function TokenInfoSidebar({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
-        isOpen &&
+        isRadarOpen &&
         containerRef.current &&
         buttonRef.current &&
         !containerRef.current.contains(e.target as Node) &&
         !buttonRef.current.contains(e.target as Node)
       ) {
-        setIsOpen(false);
+        onRadarToggle(false);
       }
     };
 
-    if (isOpen) {
+    if (isRadarOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isOpen]);
+  }, [isRadarOpen, onRadarToggle]);
+  
+  const handleRadarClick = () => {
+    if (!hasTokens) return;
+    if (isChatOpen) return;
+    onRadarToggle(!isRadarOpen);
+  };
 
   return (
     <>
@@ -142,8 +153,8 @@ export function TokenInfoSidebar({
       <div
         ref={buttonRef}
         className="token-info-button"
-        onClick={() => hasTokens && setIsOpen(!isOpen)}
-        style={{ opacity: hasTokens ? 1 : 0.5, cursor: hasTokens ? 'pointer' : 'not-allowed' }}
+        onClick={handleRadarClick}
+        style={{ opacity: hasTokens && !isChatOpen ? 1 : 0.5, cursor: hasTokens && !isChatOpen ? 'pointer' : 'not-allowed' }}
         data-testid="button-token-info"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -155,11 +166,11 @@ export function TokenInfoSidebar({
           <line x1="12" y1="21" x2="12" y2="23"/>
           <line x1="3" y1="12" x2="1" y2="12"/>
         </svg>
-        <div className="token-info-text">{isOpen ? 'Hide' : 'Mini Radar'}</div>
+        <div className="token-info-text">{isRadarOpen ? 'Hide' : 'Mini Radar'}</div>
       </div>
 
       {/* Sidebar */}
-      {isOpen && (
+      {isRadarOpen && (
         <div ref={containerRef} className="token-info-container" data-testid="sidebar-token-info">
           {fromToken && (
             <div className="token-info-row">
@@ -176,8 +187,12 @@ export function TokenInfoSidebar({
                 <div><div className="stat-label">Price</div><div className="stat-value">{fromPriceUsd ? formatUSD(fromPriceUsd) : '—'}</div></div>
                 {fromChange24h !== null && fromChange24h !== undefined && <div><div className="stat-label">24h %</div><div className="stat-value" style={{ color: fromChange24h >= 0 ? '#9ef39e' : '#ff9e9e' }}>{fromChange24h >= 0 ? '+' : ''}{fromChange24h.toFixed(2)}%</div></div>}
               </div>
-              {fromVolume24h !== null && fromVolume24h !== undefined && <div style={{ fontSize: '7px', opacity: 0.6, marginTop: '2px' }}>Vol: {fromVolume24h > 1000000 ? `$${(fromVolume24h / 1000000).toFixed(1)}M` : `$${(fromVolume24h / 1000).toFixed(0)}K`}</div>}
-              {fromMarketCap !== null && fromMarketCap !== undefined && <div style={{ fontSize: '7px', opacity: 0.5, marginTop: '1px' }}>Cap: {fromMarketCap > 1000000 ? `$${(fromMarketCap / 1000000).toFixed(1)}M` : `$${(fromMarketCap / 1000).toFixed(0)}K`}</div>}
+              {(fromVolume24h !== null && fromVolume24h !== undefined) || (fromMarketCap !== null && fromMarketCap !== undefined) && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '2px', fontSize: '7px', opacity: 0.7 }}>
+                  {fromVolume24h !== null && fromVolume24h !== undefined && <div>Vol: {fromVolume24h > 1000000 ? `$${(fromVolume24h / 1000000).toFixed(1)}M` : `$${(fromVolume24h / 1000).toFixed(0)}K`}</div>}
+                  {fromMarketCap !== null && fromMarketCap !== undefined && <div>Cap: {fromMarketCap > 1000000 ? `$${(fromMarketCap / 1000000).toFixed(1)}M` : `$${(fromMarketCap / 1000).toFixed(0)}K`}</div>}
+                </div>
+              )}
               <Sparkline trend={(fromChange24h ?? 0) >= 0 ? 'up' : 'down'} />
             </div>
           )}
@@ -196,8 +211,12 @@ export function TokenInfoSidebar({
                 <div><div className="stat-label">Price</div><div className="stat-value">{toPriceUsd ? formatUSD(toPriceUsd) : '—'}</div></div>
                 {toChange24h !== null && toChange24h !== undefined && <div><div className="stat-label">24h %</div><div className="stat-value" style={{ color: toChange24h >= 0 ? '#9ef39e' : '#ff9e9e' }}>{toChange24h >= 0 ? '+' : ''}{toChange24h.toFixed(2)}%</div></div>}
               </div>
-              {toVolume24h !== null && toVolume24h !== undefined && <div style={{ fontSize: '7px', opacity: 0.6, marginTop: '2px' }}>Vol: {toVolume24h > 1000000 ? `$${(toVolume24h / 1000000).toFixed(1)}M` : `$${(toVolume24h / 1000).toFixed(0)}K`}</div>}
-              {toMarketCap !== null && toMarketCap !== undefined && <div style={{ fontSize: '7px', opacity: 0.5, marginTop: '1px' }}>Cap: {toMarketCap > 1000000 ? `$${(toMarketCap / 1000000).toFixed(1)}M` : `$${(toMarketCap / 1000).toFixed(0)}K`}</div>}
+              {(toVolume24h !== null && toVolume24h !== undefined) || (toMarketCap !== null && toMarketCap !== undefined) && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '2px', fontSize: '7px', opacity: 0.7 }}>
+                  {toVolume24h !== null && toVolume24h !== undefined && <div>Vol: {toVolume24h > 1000000 ? `$${(toVolume24h / 1000000).toFixed(1)}M` : `$${(toVolume24h / 1000).toFixed(0)}K`}</div>}
+                  {toMarketCap !== null && toMarketCap !== undefined && <div>Cap: {toMarketCap > 1000000 ? `$${(toMarketCap / 1000000).toFixed(1)}M` : `$${(toMarketCap / 1000).toFixed(0)}K`}</div>}
+                </div>
+              )}
               <Sparkline trend={(toChange24h ?? 0) >= 0 ? 'up' : 'down'} />
             </div>
           )}
