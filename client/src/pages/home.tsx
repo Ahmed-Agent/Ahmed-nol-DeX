@@ -243,8 +243,21 @@ export default function Home() {
   }, [fromToken, toToken, chain]);
 
   const setDefaultTokensForChain = useCallback(async (chainType: ChainType) => {
-    const targetChainId = chainType === 'ETH' ? 1 : 137;
-    const defaults = chainType === 'ETH' ? ETHEREUM_DEFAULTS : POLYGON_DEFAULTS;
+    let targetChainId: number;
+    let defaults: any;
+    
+    if (chainType === 'ETH') {
+      targetChainId = 1;
+      defaults = ETHEREUM_DEFAULTS;
+    } else if (chainType === 'POL') {
+      targetChainId = 137;
+      defaults = POLYGON_DEFAULTS;
+    } else {
+      // BRG mode - load both chains
+      await loadTokensForChain(1);
+      await loadTokensForChain(137);
+      return;
+    }
     
     await loadTokensForChain(targetChainId);
     const tokenMap = getTokenMap(targetChainId);
