@@ -436,7 +436,7 @@ export default function Home() {
     fetchPrices();
   }, [fetchPrices, chain]);
 
-  // Listen for token selection from main search bar and load historical data with continuous updates
+  // Listen for token selection from main search bar and load historical data
   useEffect(() => {
     if (selectedFromToken && selectionVersion > 0) {
       const token = selectedFromToken as ExtendedToken;
@@ -452,44 +452,8 @@ export default function Home() {
           setFromPriceHistory([...history]);
         }
       });
-      
-      // Continuously update price history every 5 minutes per source
-      const interval = setInterval(async () => {
-        const history = await getHistoricalPriceData(token, chainId);
-        if (history.length > 0) {
-          priceHistoryRef.current.from = history;
-          setFromPriceHistory([...history]);
-        }
-      }, 5 * 60 * 1000); // 5 minutes per source (CoinGecko refresh)
-      
-      return () => clearInterval(interval);
     }
   }, [selectedFromToken, selectionVersion, clearSelection, chain]);
-
-  // Handle TO token selection and load its price history
-  useEffect(() => {
-    if (toToken) {
-      const chainId = toToken.chainId || (chain === 'ETH' ? 1 : 137);
-      // Initial load of TO token price history
-      getHistoricalPriceData(toToken, chainId).then(history => {
-        if (history.length > 0) {
-          priceHistoryRef.current.to = history;
-          setToPriceHistory([...history]);
-        }
-      });
-      
-      // Continuously update TO token price history every 5 minutes
-      const interval = setInterval(async () => {
-        const history = await getHistoricalPriceData(toToken, chainId);
-        if (history.length > 0) {
-          priceHistoryRef.current.to = history;
-          setToPriceHistory([...history]);
-        }
-      }, 5 * 60 * 1000); // 5 minutes per source
-      
-      return () => clearInterval(interval);
-    }
-  }, [toToken, chain]);
 
   // Price-based estimate
   useEffect(() => {

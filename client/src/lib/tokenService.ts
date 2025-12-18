@@ -827,13 +827,3 @@ export async function getHistoricalPriceData(token: Token, chainId: number): Pro
   }
 }
 
-// Get current single price point for real-time updates
-export async function getCurrentPricePoint(token: Token, chainId: number): Promise<number | null> {
-  try {
-    const price = await getTokenPriceUSD(token.address, token.decimals, chainId);
-    return price;
-  } catch (e) {
-    console.warn('Failed to fetch current price point:', e);
-    return null;
-  }
-}
