@@ -151,9 +151,7 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
     }
   }, [isOpen, username]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  // Removed auto-scroll: users can scroll manually through chat
 
   // Cleanup countdown interval on unmount
   useEffect(() => {
