@@ -727,15 +727,96 @@ export async function getTokenByAddress(address: string, chainId?: number): Prom
   const cid = chainId ?? config.chainId;
   const addr = low(address);
   
-  // ONLY return tokens from self-hosted lists - NO external fetches
-  // This prevents fake/unverified tokens from appearing in suggestions
+  // First check local token map (self-hosted)
   const tokenMap = getTokenMap(cid);
   if (tokenMap.has(addr)) {
     return tokenMap.get(addr) || null;
   }
   
-  // Token not in our verified self-hosted list
-  console.log(`Token ${addr} not found in verified self-hosted list for chain ${cid}`);
+  // Try to fetch from multiple sources - FULL external API access for contract address search
+  const sources = [
+    // CoinGecko
+    async () => {
+      const network = chainIdToCoingeckoNetwork[cid] || 'polygon-pos';
+      const url = `https://api.coingecko.com/api/v3/coins/${network}/contract/${addr}`;
+      const headers: Record<string, string> = {};
+      if (config.coingeckoApiKey) {
+        headers['x-cg-pro-api-key'] = config.coingeckoApiKey;
+      }
+      const res = await fetchWithTimeout(url, { headers }, 5000);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && data.symbol) {
+        return {
+          address: addr,
+          symbol: data.symbol?.toUpperCase() || '',
+          name: data.name || '',
+          decimals: data.detail_platforms?.[network]?.decimal_place || 18,
+          logoURI: data.image?.small || data.image?.thumb || '',
+        };
+      }
+      return null;
+    },
+    // GeckoTerminal
+    async () => {
+      const networkMap: Record<number, string> = { 1: 'eth', 137: 'polygon_pos' };
+      const network = networkMap[cid] || 'polygon_pos';
+      const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${addr}`;
+      const res = await fetchWithTimeout(url, {}, 5000);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const attrs = data?.data?.attributes;
+      if (attrs && attrs.symbol) {
+        return {
+          address: addr,
+          symbol: attrs.symbol?.toUpperCase() || '',
+          name: attrs.name || '',
+          decimals: attrs.decimals || 18,
+          logoURI: attrs.image_url || '',
+        };
+      }
+      return null;
+    },
+    // DexScreener
+    async () => {
+      const url = `https://api.dexscreener.com/latest/dex/tokens/${addr}`;
+      const res = await fetchWithTimeout(url, {}, 5000);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const pairs = data?.pairs || [];
+      const chainFilter = cid === 1 ? 'ethereum' : 'polygon';
+      const pair = pairs.find((p: any) => p.chainId === chainFilter);
+      if (pair) {
+        const baseToken = pair.baseToken?.address?.toLowerCase() === addr ? pair.baseToken : pair.quoteToken;
+        if (baseToken) {
+          return {
+            address: addr,
+            symbol: baseToken.symbol || '',
+            name: baseToken.name || '',
+            decimals: 18,
+            logoURI: '',
+          };
+        }
+      }
+      return null;
+    },
+  ];
+  
+  for (const source of sources) {
+    try {
+      const token = await source();
+      if (token) {
+        // Add to address map for lookups, but DO NOT add to main tokenList
+        // This keeps empty search results showing only self-hosted tokens
+        tokenMap.set(addr, token);
+        tokenMapByChain.set(cid, tokenMap);
+        return token;
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+  
   return null;
 }
 
