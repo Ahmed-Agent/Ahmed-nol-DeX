@@ -56,64 +56,83 @@ export function TokenInput({
     },
   };
 
-  // Hardcoded blacklist of known scam/fake tokens by address (permanently blocked)
-  const SCAM_TOKEN_BLACKLIST = new Set([
-    // Add detected scam addresses here
-  ]);
-
-  // Whitelist of SAFE tokens for default suggestions (bypasses all other filtering)
-  const DEFAULT_SUGGESTIONS_WHITELIST = new Set([
-    // Ethereum
-    '0x0000000000000000000000000000000000000000', // ETH
-    '0xc02aaa39b223fe8d0a0e8e4f27ead9083c756cc2', // WETH
-    '0xdac17f958d2ee523a2206206994597c13d831ec7', // USDT
-    '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC
-    '0x6b175474e89094c44da98b954eedeac495271d0f', // DAI
-    '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', // WBTC
-    // Polygon
-    '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', // WMATIC
-    '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', // USDT Polygon
-    '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', // USDC Polygon
-    '0x8f3cf7ad23cd3cadbd9735aff958023d60c95e97', // DAI Polygon
-    '0x1bfd67037b42cf73acf2047067bd4303cbd5e4da', // WBTC Polygon
-  ]);
-
-  // Filter out FAKE/SCAM tokens by price and volume
+  // Filter out FAKE/SCAM tokens by detecting suspicious characteristics
   // Only apply filtering for ticker searches, NOT for address searches
   const isLikelyScam = (token: ExtendedToken & { currentPrice?: number; priceChange24h?: number; marketCap?: number }, allTokensInResults?: any[], isAddressSearch: boolean = false) => {
     const symbol = token.symbol.toUpperCase();
+    const name = token.name.toUpperCase();
     const address = (token.address || '').toLowerCase();
     const chainId = token.chainId || 0;
     
-    // Check hardcoded blacklist first (highest priority)
-    if (SCAM_TOKEN_BLACKLIST.has(address)) {
-      console.log(`Blocked scam token by blacklist: ${symbol} (${address})`);
-      return true;
-    }
-    
-    // Whitelist of real native tokens - always allow these
-    const realNativeTokens = ['ETH', 'WETH', 'USDT', 'USDC', 'DAI', 'USDE', 'MATIC', 'POL', 'WBTC', 'WMATIC'];
-    if (realNativeTokens.includes(symbol)) {
-      // Still validate stablecoin addresses
-      if (symbol === 'USDT' || symbol === 'USDC') {
-        const chainWhitelist = STABLECOIN_WHITELIST[chainId as keyof typeof STABLECOIN_WHITELIST];
-        if (chainWhitelist && chainWhitelist[symbol as 'USDT' | 'USDC']) {
-          const whitelistedAddress = chainWhitelist[symbol as 'USDT' | 'USDC'].toLowerCase();
-          if (address === whitelistedAddress) return false;
-          return true; // Fake stablecoin
-        }
-        return true; // Unsupported chain
+    // Check stablecoin whitelist first - ONLY allow whitelisted addresses (ALWAYS apply)
+    if (symbol === 'USDT' || symbol === 'USDC') {
+      const chainWhitelist = STABLECOIN_WHITELIST[chainId as keyof typeof STABLECOIN_WHITELIST];
+      if (chainWhitelist && chainWhitelist[symbol as 'USDT' | 'USDC']) {
+        const whitelistedAddress = chainWhitelist[symbol as 'USDT' | 'USDC'].toLowerCase();
+        if (address === whitelistedAddress) return false;
+        return true;
       }
-      return false; // Allow real native tokens
+      return true;
     }
     
     // Skip additional filters if this is an address search
     if (isAddressSearch) return false;
     
-    // Filter tokens with BOTH price > 1000 AND volume > 10 million (fake inflated tokens)
-    const price = token.currentPrice || 0;
-    const volume = (allTokensInResults?.find(r => r.token?.address === token.address)?.stats?.volume24h) || 0;
-    if (price > 1000 && volume > 10000000) return true;
+    // Filter SOLANA, BITCOIN, XRP - ONLY allow on Ethereum chain
+    if (['SOLANA', 'SOL', 'BITCOIN', 'BTC', 'XRP', 'RIPPLE'].includes(symbol)) {
+      if (chainId !== 1) return true; // Filter if not on Ethereum
+    }
+    
+    // Filter tokens with "ethereum" or "etherium" words (except wrapped/native)
+    const ethereumWords = /\b(ethereum|etherium)\b/i.test(name);
+    if (ethereumWords) {
+      // Allow only if it's wrapped ETH or native ETH on Ethereum
+      if (symbol === 'ETH' && chainId === 1) return false;
+      if (symbol === 'WETH' && chainId === 1) return false;
+      if (symbol === 'WETH' && chainId === 137) return false; // Wrapped ETH on Polygon is okay
+      // Otherwise filter it
+      if (symbol !== 'ETH' && symbol !== 'WETH') return true;
+    }
+    
+    // Aggressive scam patterns - catches tricks like "USDTet", "ETHx", etc
+    const scamPatterns = [
+      /fake\s+/i,
+      /clone\s+/i,
+      /scam\s+/i,
+      /rug\s+/i,
+      /pump\s+/i,
+      /test\s+/i,
+      /token\s+\d+/i,
+      /\s+v\d+$/i,
+      /\bETH[A-Z0-9]/i,
+      /\bBNB[A-Z0-9]/i,
+      /\bUSDT[A-Z0-9]/i,
+      /\bUSDC[A-Z0-9]/i,
+      /ethereum\s+clone/i,
+      /fake\s+(eth|bnb|btc)/i,
+    ];
+    
+    if (scamPatterns.some(p => p.test(name) || p.test(symbol))) {
+      return true;
+    }
+    
+    // Filter out fake major coins by low market cap
+    const majorSymbols = ['ETH', 'BTC', 'BNB', 'SOL'];
+    if (majorSymbols.includes(symbol)) {
+      const marketCap = token.marketCap || 0;
+      if (marketCap < 100000000) return true;
+    }
+    
+    // If there are multiple tokens with same symbol, filter lower market cap ones (likely fakes)
+    if (allTokensInResults) {
+      const sameSymbolTokens = allTokensInResults.filter(t => t.token?.symbol?.toUpperCase() === symbol);
+      if (sameSymbolTokens.length > 1) {
+        const maxMarketCap = Math.max(...sameSymbolTokens.map(t => t.marketCap || 0));
+        if ((token.marketCap || 0) < maxMarketCap * 0.05) {
+          return true;
+        }
+      }
+    }
     
     return false;
   };
@@ -142,26 +161,7 @@ export function TokenInput({
           });
         });
       }
-      
-      // LOG ALL TOKENS WITH THEIR STATS FOR DEBUG
-      console.log('=== DEFAULT SUGGESTIONS DEBUG ===');
-      console.log('Chain:', chain);
-      allTokens.forEach((item, idx) => {
-        console.log(`${idx + 1}. ${item.token.symbol} (Chain ${item.token.chainId}):`, {
-          price: item.price,
-          volume: item.stats?.volume24h,
-          marketCap: item.stats?.marketCap,
-          priceChange: item.stats?.change,
-          address: item.token.address,
-        });
-      });
-      
-      // For default suggestions: ONLY show whitelisted safe tokens to prevent scams
-      const filtered = allTokens.filter(item => {
-        const addr = (item.token.address || '').toLowerCase();
-        return DEFAULT_SUGGESTIONS_WHITELIST.has(addr);
-      });
-      
+      const filtered = allTokens.filter(item => !isLikelyScam(item.token, allTokens, false));
       setSuggestions(filtered.slice(0, 15));
       setShowSuggestions(true);
       return;
