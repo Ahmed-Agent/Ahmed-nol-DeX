@@ -42,48 +42,48 @@ export function TokenInput({
   const lastSelectedAddressRef = useRef<string>('');
   const firstClickRef = useRef<boolean>(true);
 
-  // Filter wrapped/bridged versions of major coins, keeping only canonical versions
-  const isCanonicalOrMajor = (token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }) => {
+  // Filter out FAKE/SCAM tokens by detecting suspicious characteristics
+  const isLikelyScam = (token: ExtendedToken & { currentPrice?: number; priceChange24h?: number; marketCap?: number }, allTokensInResults?: any[]) => {
     const symbol = token.symbol.toUpperCase();
     const name = token.name.toUpperCase();
-    const chainId = token.chainId || 0;
     
-    // Canonical major coins (always keep)
-    if (symbol === 'ETH' && chainId === 1) return true;
-    if (symbol === 'POL' && chainId === 137) return true;
-    if (symbol === 'BNB' && chainId === 56) return true;
-    if (symbol === 'SOL' && chainId === 101) return true;
-    if ((symbol === 'USDT' || symbol === 'USDC') && (chainId === 1 || chainId === 137)) return true;
-    
-    // Filter out wrapped/bridged versions
-    const wrappedPatterns = [
-      /wrapped\s+(eth|ether|btc|bitcoin|bnb|pol|polygon|usdc|usdt|sol|solana)/i,
-      /^w(eth|btc|bnb|pol|usdc|usdt|sol)$/i,
-      /bridged\s+(eth|usdc|usdt|weth|bnb|pol)/i,
-      /polygon\s+pos\s+bridged/i,
-      /arbitrum\s+bridged/i,
-      /optimism\s+bridged/i,
-      /\s+\(wrapped\)/i,
-      /\s+\(bridged\)/i,
-      /\s+\(polygon\s+pos\)/i,
-      /cross-?chain/i,
-      /layer\s+zero/i,
-      /portal\s+wrapped/i,
+    // Obvious scam patterns
+    const scamPatterns = [
+      /fake\s+/i,
+      /clone\s+/i,
+      /scam\s+/i,
+      /rug\s+/i,
+      /pump\s+/i,
+      /test\s+/i,
+      /token\s+\d+/i,
+      /\s+v\d+$/i, // "ETH v2", "USDT v3" etc - likely clones
     ];
     
-    const isWrappedOrBridged = wrappedPatterns.some(pattern => 
-      pattern.test(symbol) || pattern.test(name)
-    );
-    
-    // If it looks wrapped/bridged but isn't a canonical version, filter it out
-    if (isWrappedOrBridged) {
-      // Exception: keep if it's a major stablecoin on a major chain
-      const isMajorStablecoin = (symbol === 'USDT' || symbol === 'USDC') && 
-        (chainId === 1 || chainId === 137 || chainId === 56 || chainId === 42161);
-      if (!isMajorStablecoin) return false;
+    if (scamPatterns.some(p => p.test(name) || p.test(symbol))) {
+      return true;
     }
     
-    return true;
+    // Suspiciously low market cap for major symbols
+    const majorSymbols = ['ETH', 'BTC', 'USDT', 'USDC', 'BNB', 'POL', 'SOL'];
+    if (majorSymbols.includes(symbol)) {
+      const marketCap = token.marketCap || 0;
+      // If claiming to be a major coin but market cap < $1M, likely fake
+      if (marketCap < 1000000) return true;
+    }
+    
+    // If there are multiple tokens with same symbol, filter lower market cap ones (likely fakes)
+    if (allTokensInResults) {
+      const sameSymbolTokens = allTokensInResults.filter(t => t.token?.symbol?.toUpperCase() === symbol);
+      if (sameSymbolTokens.length > 1) {
+        const maxMarketCap = Math.max(...sameSymbolTokens.map(t => t.marketCap || 0));
+        // If this token has much lower market cap than others with same symbol, it's likely fake
+        if ((token.marketCap || 0) < maxMarketCap * 0.1) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   };
 
   const handleSearch = useCallback(async (query: string) => {
@@ -110,7 +110,7 @@ export function TokenInput({
           });
         });
       }
-      const filtered = allTokens.filter(item => isCanonicalOrMajor(item.token));
+      const filtered = allTokens.filter(item => !isLikelyScam(item.token, allTokens));
       setSuggestions(filtered.slice(0, 15));
       setShowSuggestions(true);
       return;
@@ -186,8 +186,8 @@ export function TokenInput({
         return true;
       });
       
-      // Apply canonical filter
-      const filtered = deduplicated.filter(item => isCanonicalOrMajor(item.token));
+      // Apply scam filter
+      const filtered = deduplicated.filter(item => !isLikelyScam(item.token, deduplicated));
       
       setSuggestions(filtered.slice(0, 15));
       setShowSuggestions(true);
