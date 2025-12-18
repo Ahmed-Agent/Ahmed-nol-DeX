@@ -262,10 +262,13 @@ export async function loadTokensForChain(chainId: number): Promise<void> {
     console.log(`Loading tokens for chain ${chainId}...`);
     tokenList = await loadTokensFromSelfHosted(chainId) || [];
     
-    // FALLBACK: If self-hosted fails, use external APIs
-    if (tokenList.length === 0) {
-      console.log(`Self-hosted source unavailable, using external APIs as fallback...`);
+    // FALLBACK: Only for Ethereum (chainId 1), not for Polygon
+    // Polygon (137) MUST use self-hosted only
+    if (tokenList.length === 0 && chainId === 1) {
+      console.log(`Self-hosted source unavailable, using external APIs as fallback for ETH...`);
       tokenList = await loadTokensFromExternalAPIs(chainId);
+    } else if (tokenList.length === 0 && chainId === 137) {
+      console.warn(`⚠️ Polygon chain: Self-hosted tokens unavailable, no fallback. Contract address search still works.`);
     }
 
     tokenList.forEach((t) => tokenMap.set(t.address, t));
