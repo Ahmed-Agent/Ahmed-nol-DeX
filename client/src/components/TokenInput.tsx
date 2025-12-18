@@ -114,7 +114,27 @@ export function TokenInput({
           });
         });
       }
+      
+      // LOG ALL TOKENS WITH THEIR STATS FOR DEBUG
+      console.log('=== DEFAULT SUGGESTIONS DEBUG ===');
+      console.log('Chain:', chain);
+      allTokens.forEach((item, idx) => {
+        console.log(`${idx + 1}. ${item.token.symbol} (Chain ${item.token.chainId}):`, {
+          price: item.price,
+          volume: item.stats?.volume24h,
+          marketCap: item.stats?.marketCap,
+          priceChange: item.stats?.change,
+          address: item.token.address,
+        });
+      });
+      
       const filtered = allTokens.filter(item => !isLikelyScam(item.token, allTokens, false));
+      
+      console.log('After filtering:', filtered.length, 'tokens');
+      filtered.forEach((item, idx) => {
+        console.log(`  ${idx + 1}. ${item.token.symbol}`);
+      });
+      
       setSuggestions(filtered.slice(0, 15));
       setShowSuggestions(true);
       return;
