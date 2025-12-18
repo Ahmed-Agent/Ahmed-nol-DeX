@@ -65,10 +65,14 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
   const [top3Messages, setTop3Messages] = useState<string[]>([]);
   const [reactingTo, setReactingTo] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLDivElement>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reactionRefreshRef = useRef<NodeJS.Timeout | null>(null);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const lastMessageCountRef = useRef(0);
+  const userScrolledRef = useRef(false);
   
   const chatPlaceholders = ["Drop your alpha...", "Share your insights..."];
   const typewriterChatPlaceholder = useTypewriter(chatPlaceholders, 70, 35, 900);
@@ -151,7 +155,70 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
     }
   }, [isOpen, username]);
 
-  // Removed auto-scroll: users can scroll manually through chat
+  // Smart auto-scroll: Only active when viewing recent 4 messages
+  // Disabled when user scrolls back, re-enabled when returning to recent messages
+  const checkIfNearBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
+    
+    // Calculate if we're within the last ~4 messages height (approx 200px)
+    const scrollBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNearBottom = scrollBottom < 200; // Within ~4 messages from bottom
+    return isNearBottom;
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    if (messagesEndRef.current && autoScrollEnabled && !userScrolledRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [autoScrollEnabled]);
+
+  // Handle scroll events to detect user scrolling back
+  const handleScroll = useCallback(() => {
+    const isNearBottom = checkIfNearBottom();
+    
+    if (!isNearBottom) {
+      // User scrolled back - disable auto-scroll
+      userScrolledRef.current = true;
+      setAutoScrollEnabled(false);
+    } else if (userScrolledRef.current && isNearBottom) {
+      // User returned to recent messages - re-enable auto-scroll
+      userScrolledRef.current = false;
+      setAutoScrollEnabled(true);
+    }
+  }, [checkIfNearBottom]);
+
+  // Set up scroll listener
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container || !isOpen) return;
+    
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [isOpen, handleScroll]);
+
+  // Auto-scroll when new messages arrive (only if viewing recent messages)
+  useEffect(() => {
+    if (messages.length > lastMessageCountRef.current) {
+      // New messages arrived
+      if (autoScrollEnabled && !userScrolledRef.current) {
+        scrollToBottom();
+      }
+    }
+    lastMessageCountRef.current = messages.length;
+  }, [messages.length, autoScrollEnabled, scrollToBottom]);
+
+  // Scroll to bottom when chat first opens
+  useEffect(() => {
+    if (isOpen && messages.length > 0) {
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        setAutoScrollEnabled(true);
+        userScrolledRef.current = false;
+      }, 100);
+    }
+  }, [isOpen]);
 
   // Cleanup countdown interval on unmount
   useEffect(() => {
@@ -198,7 +265,7 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
     }
   };
 
-  // Refresh reaction stats every 1 second for real-time global consistency
+  // Refresh reaction stats every 2 seconds for real-time global consistency
   useEffect(() => {
     if (isOpen && messages.length > 0) {
       const refreshStats = async () => {
@@ -210,8 +277,8 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
       };
       // Immediate refresh on open
       refreshStats();
-      // Then refresh every 1 second
-      reactionRefreshRef.current = setInterval(refreshStats, 1000);
+      // Then refresh every 2 seconds for global sync
+      reactionRefreshRef.current = setInterval(refreshStats, 2000);
       return () => {
         if (reactionRefreshRef.current) clearInterval(reactionRefreshRef.current);
       };
@@ -373,6 +440,7 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
         </h3>
 
         <div
+          ref={messagesContainerRef}
           style={{
             overflowY: 'auto',
             flex: 1,

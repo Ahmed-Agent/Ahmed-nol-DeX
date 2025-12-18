@@ -1069,6 +1069,68 @@ export async function registerRoutes(
     hourBucket: number;
   }
   const inMemoryReactions: InMemoryReaction[] = [];
+  
+  // Track valid message IDs (recent 500 messages) for cleanup
+  let validMessageIds: Set<string> = new Set();
+  const MAX_MESSAGES_TO_TRACK = 500;
+
+  // Cleanup reactions for messages beyond 500th position
+  function cleanupOldReactions(currentMessageIds: string[]): void {
+    // Update valid message IDs set
+    validMessageIds = new Set(currentMessageIds.slice(-MAX_MESSAGES_TO_TRACK));
+    
+    // Remove in-memory reactions for messages not in the recent 500
+    const beforeCount = inMemoryReactions.length;
+    for (let i = inMemoryReactions.length - 1; i >= 0; i--) {
+      if (!validMessageIds.has(inMemoryReactions[i].messageId)) {
+        inMemoryReactions.splice(i, 1);
+      }
+    }
+    const removed = beforeCount - inMemoryReactions.length;
+    if (removed > 0) {
+      console.log(`[Reactions Cleanup] Removed ${removed} reactions for messages beyond position 500`);
+    }
+  }
+
+  // Periodic cleanup of old reactions (every 60 seconds)
+  setInterval(async () => {
+    // Get recent 500 message IDs from Supabase
+    const supabaseUrl = getSupabaseUrl();
+    const supabaseKey = getSupabaseAnonKey();
+    if (!supabaseUrl || !supabaseKey) return;
+    
+    try {
+      const resp = await fetch(
+        `${supabaseUrl}/rest/v1/chat_messages?select=id&order=created_at.asc&limit=500`,
+        {
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+        }
+      );
+      if (resp.ok) {
+        const messages = await resp.json();
+        const ids = messages.map((m: { id: string }) => m.id);
+        cleanupOldReactions(ids);
+        
+        // Also cleanup Supabase reactions for old messages
+        if (supabaseReactionsAvailable && ids.length > 0) {
+          // Delete reactions for messages NOT in the recent 500
+          const idsFilter = ids.map((id: string) => `message_id.neq.${id}`).join(',');
+          const deleteResp = await fetch(
+            `${supabaseUrl}/rest/v1/message_reactions?and=(${idsFilter})`,
+            {
+              method: 'DELETE',
+              headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+            }
+          );
+          if (deleteResp.ok) {
+            console.log('[Reactions Cleanup] Cleaned up Supabase reactions for old messages');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Reactions Cleanup] Error during cleanup:', e);
+    }
+  }, 60000); // Every 60 seconds
 
   // Helper: Create reactions table if it doesn't exist (run once on startup)
   async function ensureReactionsTable(): Promise<boolean> {

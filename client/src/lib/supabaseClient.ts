@@ -77,7 +77,7 @@ export async function fetchMessages() {
       .from('chat_messages')
       .select('id, user, text, created_at')
       .order('created_at', { ascending: true })
-      .limit(200);
+      .limit(500);
 
     if (error) {
       console.error('Fetch messages error:', error);
