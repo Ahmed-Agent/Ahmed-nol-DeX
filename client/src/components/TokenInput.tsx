@@ -78,20 +78,29 @@ export function TokenInput({
     // Skip additional filters if this is an address search
     if (isAddressSearch) return false;
     
+    // Filter tickers longer than 16 characters (likely spam/scam)
+    if (symbol.length > 16) return true;
+    
     // Filter SOLANA, BITCOIN, XRP - ONLY allow on Ethereum chain
     if (['SOLANA', 'SOL', 'BITCOIN', 'BTC', 'XRP', 'RIPPLE'].includes(symbol)) {
       if (chainId !== 1) return true; // Filter if not on Ethereum
     }
     
-    // Filter tokens with "ethereum" or "etherium" words (except wrapped/native)
+    // Filter tokens with "ethereum" or "etherium" words (except real WETH/ETH only)
     const ethereumWords = /\b(ethereum|etherium)\b/i.test(name);
     if (ethereumWords) {
-      // Allow only if it's wrapped ETH or native ETH on Ethereum
+      // Allow ONLY: real ETH on Ethereum, real WETH on Ethereum, real WETH on Polygon
       if (symbol === 'ETH' && chainId === 1) return false;
-      if (symbol === 'WETH' && chainId === 1) return false;
-      if (symbol === 'WETH' && chainId === 137) return false; // Wrapped ETH on Polygon is okay
-      // Otherwise filter it
-      if (symbol !== 'ETH' && symbol !== 'WETH') return true;
+      if (symbol === 'WETH' && (chainId === 1 || chainId === 137)) return false;
+      // Filter everything else with ethereum/etherium in name
+      return true;
+    }
+    
+    // Filter tokens with "bitcoin" in name/ticker AND market cap < 10k (likely fake bitcoin clones)
+    const bitcoinWords = /\b(bitcoin|btc)\b/i.test(name) || /\b(bitcoin|btc)\b/i.test(symbol);
+    if (bitcoinWords && symbol !== 'BTC') {
+      const marketCap = token.marketCap || 0;
+      if (marketCap < 10000) return true; // Filter fake bitcoin clones with low market cap
     }
     
     // Aggressive scam patterns - catches tricks like "USDTet", "ETHx", etc
