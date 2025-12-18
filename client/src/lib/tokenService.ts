@@ -799,11 +799,13 @@ export async function refreshMarketData(chainId?: number): Promise<void> {
   console.log(`Refreshed market data for chain ${cid}, source: ${currentDataSource}`);
 }
 
-// Fetch historical 2-hour price data (60 points at 2-minute intervals)
+// Fetch real 1-hour price data (12 points at 5-minute intervals)
+// This provides the last hour of price movement for accurate sparkline visualization
 export async function getHistoricalPriceData(token: Token, chainId: number): Promise<number[]> {
   try {
     const cgNetwork = chainIdToCoingeckoNetwork[chainId] || 'polygon-pos';
-    const url = `/api/prices/coingecko/coins/${cgNetwork}/contract/${token.address}/market_chart?vs_currency=usd&days=2`;
+    // Fetch 7 days of data to have enough granular points for 1-hour window
+    const url = `/api/prices/coingecko/coins/${cgNetwork}/contract/${token.address}/market_chart?vs_currency=usd&days=7`;
     const response = await fetchWithTimeout(url, {}, 5000);
     
     if (!response.ok) return [];
@@ -811,10 +813,27 @@ export async function getHistoricalPriceData(token: Token, chainId: number): Pro
     const data = await response.json() as any;
     const prices = data?.prices || [];
     
-    // Get last 60 data points (2 hours at 2-minute intervals, but using available data)
-    return prices.slice(-60).map((p: any) => typeof p[1] === 'number' ? p[1] : 0).filter(p => p > 0);
+    if (prices.length === 0) return [];
+    
+    // Get last 12 data points (1 hour at ~5-minute intervals)
+    // CoinGecko provides data at varying intervals; we take the last 12 points for ~1 hour coverage
+    const recentPrices = prices.slice(-12).map((p: any) => typeof p[1] === 'number' ? p[1] : 0).filter(p => p > 0);
+    
+    console.log(`[PriceHistory] Fetched ${recentPrices.length} price points for ${token.symbol} on chain ${chainId}`);
+    return recentPrices;
   } catch (e) {
     console.warn('Failed to fetch historical price data:', e);
     return [];
+  }
+}
+
+// Get current single price point for real-time updates
+export async function getCurrentPricePoint(token: Token, chainId: number): Promise<number | null> {
+  try {
+    const price = await getTokenPriceUSD(token.address, token.decimals, chainId);
+    return price;
+  } catch (e) {
+    console.warn('Failed to fetch current price point:', e);
+    return null;
   }
 }
