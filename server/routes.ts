@@ -357,12 +357,12 @@ export async function registerRoutes(
         return res.json(cached);
       }
 
-      // 2-minute sequence alternation
+      // 2-minute round-robin alternation between CoinGecko & CMC (friendly to free APIs)
       const now = Date.now();
       if (now - lastSourceSwitch >= SOURCE_SWITCH_INTERVAL) {
         lastPriceSource = lastPriceSource === 'cmc' ? 'coingecko' : 'cmc';
         lastSourceSwitch = now;
-        console.log(`[2-min sequence] Switched to: ${lastPriceSource}`);
+        console.log(`[API Rotation 2min cycle] Primary source: ${lastPriceSource} | Fallback: ${lastPriceSource === 'cmc' ? 'coingecko' : 'cmc'} | TTL: 10s`);
       }
       
       let data: unknown = null;
@@ -450,7 +450,7 @@ export async function registerRoutes(
       }
       
       const result = { data, source, cached: false };
-      setCache(cacheKey, result, 120000); // Cache for 2 minutes (matches sequence)
+      setCache(cacheKey, result, 10000); // Cache for 10 seconds (faster price updates with 2-min rotation)
       return res.json(result);
     } catch (error) {
       console.error('Price tokens error:', error);
@@ -494,7 +494,7 @@ export async function registerRoutes(
       }
 
       const data = await response.json();
-      setCache(cacheKey, data, 30000); // Cache for 30 seconds
+      setCache(cacheKey, data, 10000); // Cache for 10 seconds (optimized for fast refresh)
       return res.json(data);
     } catch (error) {
       console.error('CoinGecko proxy error:', error);
@@ -538,7 +538,7 @@ export async function registerRoutes(
       }
 
       const data = await response.json();
-      setCache(cacheKey, data, 30000); // Cache for 30 seconds
+      setCache(cacheKey, data, 10000); // Cache for 10 seconds (optimized for fast refresh)
       return res.json(data);
     } catch (error) {
       console.error('CMC proxy error:', error);
@@ -790,7 +790,7 @@ export async function registerRoutes(
       }
 
       const data = await response.json();
-      setCache(cacheKey, data, 30000); // Cache for 30 seconds
+      setCache(cacheKey, data, 10000); // Cache for 10 seconds (optimized for fast refresh)
       return res.json(data);
     } catch (error) {
       console.error('Etherscan proxy error:', error);
@@ -833,7 +833,7 @@ export async function registerRoutes(
       }
 
       const data = await response.json();
-      setCache(cacheKey, data, 30000); // Cache for 30 seconds
+      setCache(cacheKey, data, 10000); // Cache for 10 seconds (optimized for fast refresh)
       return res.json(data);
     } catch (error) {
       console.error('Polygonscan proxy error:', error);
@@ -894,7 +894,7 @@ export async function registerRoutes(
       }
 
       const data = await response.json();
-      setCache(cacheKey, data, 30000); // Cache for 30 seconds
+      setCache(cacheKey, data, 10000); // Cache for 10 seconds (optimized for fast refresh)
       return res.json(data);
     } catch (error) {
       console.error('Explorer proxy error:', error);
