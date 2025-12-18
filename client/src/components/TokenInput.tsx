@@ -42,6 +42,50 @@ export function TokenInput({
   const lastSelectedAddressRef = useRef<string>('');
   const firstClickRef = useRef<boolean>(true);
 
+  // Filter wrapped/bridged versions of major coins, keeping only canonical versions
+  const isCanonicalOrMajor = (token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }) => {
+    const symbol = token.symbol.toUpperCase();
+    const name = token.name.toUpperCase();
+    const chainId = token.chainId || 0;
+    
+    // Canonical major coins (always keep)
+    if (symbol === 'ETH' && chainId === 1) return true;
+    if (symbol === 'POL' && chainId === 137) return true;
+    if (symbol === 'BNB' && chainId === 56) return true;
+    if (symbol === 'SOL' && chainId === 101) return true;
+    if ((symbol === 'USDT' || symbol === 'USDC') && (chainId === 1 || chainId === 137)) return true;
+    
+    // Filter out wrapped/bridged versions
+    const wrappedPatterns = [
+      /wrapped\s+(eth|ether|btc|bitcoin|bnb|pol|polygon|usdc|usdt|sol|solana)/i,
+      /^w(eth|btc|bnb|pol|usdc|usdt|sol)$/i,
+      /bridged\s+(eth|usdc|usdt|weth|bnb|pol)/i,
+      /polygon\s+pos\s+bridged/i,
+      /arbitrum\s+bridged/i,
+      /optimism\s+bridged/i,
+      /\s+\(wrapped\)/i,
+      /\s+\(bridged\)/i,
+      /\s+\(polygon\s+pos\)/i,
+      /cross-?chain/i,
+      /layer\s+zero/i,
+      /portal\s+wrapped/i,
+    ];
+    
+    const isWrappedOrBridged = wrappedPatterns.some(pattern => 
+      pattern.test(symbol) || pattern.test(name)
+    );
+    
+    // If it looks wrapped/bridged but isn't a canonical version, filter it out
+    if (isWrappedOrBridged) {
+      // Exception: keep if it's a major stablecoin on a major chain
+      const isMajorStablecoin = (symbol === 'USDT' || symbol === 'USDC') && 
+        (chainId === 1 || chainId === 137 || chainId === 56 || chainId === 42161);
+      if (!isMajorStablecoin) return false;
+    }
+    
+    return true;
+  };
+
   const handleSearch = useCallback(async (query: string) => {
     // BRG mode: search both chains; otherwise single chain
     const chainIds = chain === 'BRG' ? [1, 137] : [chain === 'ETH' ? 1 : 137];
@@ -66,7 +110,8 @@ export function TokenInput({
           });
         });
       }
-      setSuggestions(allTokens.slice(0, 15));
+      const filtered = allTokens.filter(item => isCanonicalOrMajor(item.token));
+      setSuggestions(filtered.slice(0, 15));
       setShowSuggestions(true);
       return;
     }
@@ -141,7 +186,10 @@ export function TokenInput({
         return true;
       });
       
-      setSuggestions(deduplicated.slice(0, 15));
+      // Apply canonical filter
+      const filtered = deduplicated.filter(item => isCanonicalOrMajor(item.token));
+      
+      setSuggestions(filtered.slice(0, 15));
       setShowSuggestions(true);
     } finally {
       setLoading(false);
