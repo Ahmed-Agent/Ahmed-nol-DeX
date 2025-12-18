@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Token, TokenStats, searchTokens, getTopTokens, getPlaceholderImage, getCgStatsMap, getTokenByAddress, loadTokensForChain } from '@/lib/tokenService';
+import { Token, TokenStats, searchTokens, getTopTokens, getPlaceholderImage, getCgStatsMap, getTokenByAddress, loadTokensForChain, getTokenLogoUrl } from '@/lib/tokenService';
 import { formatUSD, low, isAddress } from '@/lib/config';
 import { useChain } from '@/lib/chainContext';
 
@@ -381,18 +381,14 @@ export function TokenInput({
           flex: selectedToken ? undefined : 0,
         }}>
           <div className="token-icon" style={{ position: 'relative', width: '28px', height: '28px' }}>
-            {selectedToken?.logoURI ? (
-              <img
-                src={selectedToken.logoURI}
-                alt={selectedToken.symbol}
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = getPlaceholderImage();
-                }}
-                data-testid={`img-token-${side}`}
-              />
-            ) : (
-              <img src={getPlaceholderImage()} alt="Select token" />
-            )}
+            <img
+              src={selectedToken ? getTokenLogoUrl(selectedToken, chainId) : getPlaceholderImage()}
+              alt={selectedToken?.symbol || "Select token"}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = getPlaceholderImage();
+              }}
+              data-testid={`img-token-${side}`}
+            />
           </div>
           <input
             ref={inputRef}
@@ -484,15 +480,13 @@ export function TokenInput({
                   style={{ cursor: 'pointer', userSelect: 'none' }}
                 >
                   <div className="suggestion-left">
-                    {token.logoURI && (
-                      <img 
-                        src={token.logoURI} 
-                        alt={token.symbol}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = getPlaceholderImage();
-                        }}
-                      />
-                    )}
+                    <img 
+                      src={getTokenLogoUrl(token, tokenChainId)} 
+                      alt={token.symbol}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = getPlaceholderImage();
+                      }}
+                    />
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         {token.symbol}

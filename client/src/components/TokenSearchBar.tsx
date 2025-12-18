@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Token, TokenStats, searchTokens, getTopTokens, getPlaceholderImage, getCgStatsMap, getTokenByAddress } from '@/lib/tokenService';
+import { Token, TokenStats, searchTokens, getTopTokens, getPlaceholderImage, getCgStatsMap, getTokenByAddress, getTokenLogoUrl } from '@/lib/tokenService';
 import { formatUSD, low, isAddress } from '@/lib/config';
 import { useChain } from '@/lib/chainContext';
 import { useTokenSelection } from '@/lib/tokenSelectionContext';
@@ -229,15 +229,13 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
                   style={{ cursor: 'pointer', userSelect: 'none' }}
                 >
                   <div className="suggestion-left">
-                    {token.logoURI && (
-                      <img 
-                        src={token.logoURI} 
-                        alt={token.symbol}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = getPlaceholderImage();
-                        }}
-                      />
-                    )}
+                    <img 
+                      src={getTokenLogoUrl(token, tokenChainId)} 
+                      alt={token.symbol}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = getPlaceholderImage();
+                      }}
+                    />
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         {token.symbol}
