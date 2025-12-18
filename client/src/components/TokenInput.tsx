@@ -337,18 +337,6 @@ export function TokenInput({
             value={amount}
             onChange={(e) => {
               onAmountChange(e.target.value);
-              // Move cursor to end when typing
-              setTimeout(() => {
-                if (e.target.value) {
-                  e.target.setSelectionRange(e.target.value.length, e.target.value.length);
-                }
-              }, 0);
-            }}
-            onFocus={(e) => {
-              // Move cursor to end on focus
-              if (e.target.value) {
-                e.target.setSelectionRange(e.target.value.length, e.target.value.length);
-              }
             }}
             readOnly={isEstimate}
             disabled={disabled}
