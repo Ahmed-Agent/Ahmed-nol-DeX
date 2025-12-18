@@ -42,12 +42,42 @@ export function TokenInput({
   const lastSelectedAddressRef = useRef<string>('');
   const firstClickRef = useRef<boolean>(true);
 
+  // Whitelist of real stablecoin addresses on major chains
+  const STABLECOIN_WHITELIST = {
+    // Ethereum (chain 1)
+    '1': {
+      'USDT': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      'USDC': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    },
+    // Polygon (chain 137)
+    '137': {
+      'USDT': '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+      'USDC': '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+    },
+  };
+
   // Filter out FAKE/SCAM tokens by detecting suspicious characteristics
   const isLikelyScam = (token: ExtendedToken & { currentPrice?: number; priceChange24h?: number; marketCap?: number }, allTokensInResults?: any[]) => {
     const symbol = token.symbol.toUpperCase();
     const name = token.name.toUpperCase();
+    const address = (token.address || '').toLowerCase();
+    const chainId = token.chainId || 0;
     
-    // Obvious scam patterns
+    // Check stablecoin whitelist first - ONLY allow whitelisted addresses
+    if (symbol === 'USDT' || symbol === 'USDC') {
+      const chainWhitelist = STABLECOIN_WHITELIST[chainId as keyof typeof STABLECOIN_WHITELIST];
+      if (chainWhitelist && chainWhitelist[symbol as 'USDT' | 'USDC']) {
+        const whitelistedAddress = chainWhitelist[symbol as 'USDT' | 'USDC'].toLowerCase();
+        // Only allow if address matches whitelist
+        if (address === whitelistedAddress) return false;
+        // Otherwise it's a fake stablecoin
+        return true;
+      }
+      // If not in supported chain, it's fake
+      return true;
+    }
+    
+    // Aggressive scam patterns - catches tricks like "USDTet", "ETHx", etc
     const scamPatterns = [
       /fake\s+/i,
       /clone\s+/i,
@@ -56,19 +86,25 @@ export function TokenInput({
       /pump\s+/i,
       /test\s+/i,
       /token\s+\d+/i,
-      /\s+v\d+$/i, // "ETH v2", "USDT v3" etc - likely clones
+      /\s+v\d+$/i,
+      /\bETH[A-Z0-9]/i, // ETH followed by letters (ETHx, ETHet, etc)
+      /\bBNB[A-Z0-9]/i, // BNB followed by letters
+      /\bUSDT[A-Z0-9]/i, // USDT followed by letters (USDTet, etc)
+      /\bUSDC[A-Z0-9]/i, // USDC followed by letters
+      /ethereum\s+clone/i,
+      /fake\s+(eth|bnb|btc)/i,
     ];
     
     if (scamPatterns.some(p => p.test(name) || p.test(symbol))) {
       return true;
     }
     
-    // Suspiciously low market cap for major symbols
-    const majorSymbols = ['ETH', 'BTC', 'USDT', 'USDC', 'BNB', 'POL', 'SOL'];
+    // Filter out fake major coins by low market cap (except if searched by address)
+    const majorSymbols = ['ETH', 'BTC', 'BNB', 'SOL'];
     if (majorSymbols.includes(symbol)) {
       const marketCap = token.marketCap || 0;
-      // If claiming to be a major coin but market cap < $1M, likely fake
-      if (marketCap < 1000000) return true;
+      // If claiming to be a major coin but market cap < $100M, likely fake
+      if (marketCap < 100000000) return true;
     }
     
     // If there are multiple tokens with same symbol, filter lower market cap ones (likely fakes)
@@ -77,7 +113,7 @@ export function TokenInput({
       if (sameSymbolTokens.length > 1) {
         const maxMarketCap = Math.max(...sameSymbolTokens.map(t => t.marketCap || 0));
         // If this token has much lower market cap than others with same symbol, it's likely fake
-        if ((token.marketCap || 0) < maxMarketCap * 0.1) {
+        if ((token.marketCap || 0) < maxMarketCap * 0.05) {
           return true;
         }
       }
