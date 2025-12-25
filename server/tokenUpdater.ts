@@ -34,7 +34,6 @@ async function fetchCG(platform: string) {
   const baseUrl = 'https://api.coingecko.com/api/v3';
   const headers = COINGECKO_API_KEY ? { 'x-cg-demo-api-key': COINGECKO_API_KEY } : {};
   try {
-    console.log(`Fetching top tokens for ${platform} from CoinGecko...`);
     const marketsUrl = `${baseUrl}/coins/markets?vs_currency=usd&category=${platform}-ecosystem&order=market_cap_desc&per_page=250&page=1`;
     const mRes = await fetch(marketsUrl, { headers });
     if (!mRes.ok) throw new Error(`CG markets failed: ${mRes.status}`);
@@ -77,7 +76,6 @@ const POL_FALLBACK = [
 ];
 
 export async function updateTokenLists() {
-  console.log("Updating local tokens.json...");
   const [ethCMC, polCMC, ethCG, polCG] = await Promise.all([
     fetchCMC(1),
     fetchCMC(137),
@@ -99,5 +97,4 @@ export async function updateTokenLists() {
   const polygon = dedupe(polCMC, polCG, POL_FALLBACK);
   
   fs.writeFileSync(path.join(process.cwd(), "client", "src", "lib", "tokens.json"), JSON.stringify({ ethereum, polygon }, null, 2));
-  console.log(`Saved ${ethereum.length} ETH and ${polygon.length} POL tokens.`);
 }

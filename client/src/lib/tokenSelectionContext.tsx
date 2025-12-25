@@ -21,24 +21,20 @@ export function TokenSelectionProvider({ children }: { children: ReactNode }) {
   const [selectedToToken, setSelectedToToken] = useState<Token | null>(null);
   const [selectionVersion, setSelectionVersion] = useState(0);
 
-  const getRandomTokens = useCallback((cid: number) => {
+  const getDefaultTokens = useCallback((cid: number) => {
     const list = getTokenList(cid);
     if (!list || list.length === 0) return { from: null, to: null };
     
     let from: Token | null = null;
     
-    // Default logic based on requirements
     if (cid === 137) {
-      // Polygon: From is always the specific Matic address 0x...1010
       from = list.find(t => t.address.toLowerCase() === '0x0000000000000000000000000000000000001010') || list[0];
     } else if (cid === 1) {
-      // Ethereum: From is always the native ETH 0x...0000
       from = list.find(t => t.address.toLowerCase() === '0x0000000000000000000000000000000000000000') || list[0];
     } else {
       from = list[Math.floor(Math.random() * list.length)];
     }
 
-    // To is always randomized from the remaining list
     const filteredList = list.filter(t => t.address.toLowerCase() !== from?.address.toLowerCase());
     const to = filteredList.length > 0 
       ? filteredList[Math.floor(Math.random() * filteredList.length)]
@@ -48,19 +44,16 @@ export function TokenSelectionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // If we're in BRG mode, we keep what was selected
     if (chain === 'BRG') {
       previousChainRef.current = 'BRG';
       return;
     }
 
-    // If we just switched from BRG to something else, or it's first load
-    // we reset to defaults for that chain.
-    const { from, to } = getRandomTokens(chainId);
+    const { from, to } = getDefaultTokens(chainId);
     setSelectedFromToken(from);
     setSelectedToToken(to);
     previousChainRef.current = chain;
-  }, [chainId, chain, getRandomTokens]);
+  }, [chainId, chain, getDefaultTokens]);
 
   const selectFromToken = useCallback((token: Token) => {
     setSelectedFromToken(token);
