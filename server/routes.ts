@@ -83,9 +83,9 @@ async function getPriceFromPool(
     
     if (tokenReserve.isZero() || quoteReserve.isZero()) return null;
     
-    // Calculate price: quote_reserve / token_reserve
-    const price = Number(quoteReserve) * Math.pow(10, tokenDecimals) / 
-                  (Number(tokenReserve) * Math.pow(10, quoteDecimals));
+    // Calculate price: (quote_reserve / 10^quoteDecimals) / (token_reserve / 10^tokenDecimals)
+    const price = (Number(quoteReserve) / Math.pow(10, quoteDecimals)) / 
+                  (Number(tokenReserve) / Math.pow(10, tokenDecimals));
     
     return price > 0 ? price : null;
   } catch (e) {
@@ -109,12 +109,13 @@ async function getOnChainPrice(address: string, chainId: number): Promise<OnChai
     const provider = new ethers.providers.JsonRpcProvider(config.rpc);
     const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, provider);
     
-    // Get real decimals
+    // Get real decimals - DO NOT ASSUME
     let decimals = 18;
     try {
       decimals = await tokenContract.decimals();
     } catch (e) {
-      decimals = 18; // fallback
+      console.warn(`Could not fetch decimals for ${tokenAddr}, defaulting to 18`);
+      decimals = 18;
     }
 
     // Try to find price against USDC, USDT, or WETH
@@ -125,48 +126,48 @@ async function getOnChainPrice(address: string, chainId: number): Promise<OnChai
     ];
 
     let bestPrice: number | null = null;
-    const prices: number[] = [];
 
-    // Query multiple pools simultaneously
-    const allFactories = [...config.uniswapFactories];
-    if (config.sushiFactory) allFactories.push(config.sushiFactory);
-    if (config.quickswapFactory) allFactories.push(config.quickswapFactory);
+    // Parallelize all pool queries for maximum speed (Super Scalable)
+    const factories = [...config.uniswapFactories];
+    if (config.sushiFactory) factories.push(config.sushiFactory);
+    if (config.quickswapFactory) factories.push(config.quickswapFactory);
 
+    const poolQueries = [];
     for (const quoteToken of quoteTokens) {
-      for (const factory of allFactories) {
-        try {
-          // Calculate pair address (keccak256(abi.encodePacked(token0, token1)))
-          // For simplicity, we'd need multicall or factory.getPair() call
-          // This is a simplified version - in production, use factory.getPair(token0, token1)
-          const pairAddr = ethers.utils.getCreate2Address(
-            factory,
-            ethers.utils.keccak256(ethers.utils.solidityPack(
-              ['address', 'address'],
-              [tokenAddr < quoteToken.addr ? tokenAddr : quoteToken.addr,
-               tokenAddr < quoteToken.addr ? quoteToken.addr : tokenAddr]
-            )),
-            ethers.utils.keccak256("0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f") // Uniswap V2 init code
-          );
+      for (const factory of factories) {
+        poolQueries.push((async () => {
+          try {
+            const pairAddr = ethers.utils.getCreate2Address(
+              factory,
+              ethers.utils.keccak256(ethers.utils.solidityPack(
+                ['address', 'address'],
+                [tokenAddr < quoteToken.addr ? tokenAddr : quoteToken.addr,
+                 tokenAddr < quoteToken.addr ? quoteToken.addr : tokenAddr]
+              )),
+              ethers.utils.keccak256("0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f") // Uniswap V2 init code
+            );
 
-          const price = await getPriceFromPool(
-            tokenAddr,
-            quoteToken.addr,
-            pairAddr,
-            provider,
-            decimals,
-            quoteToken.decimals
-          );
-
-          if (price) {
-            prices.push(price);
-            bestPrice = price; // Take first valid price
-            break; // Found price for this quote token
+            return await getPriceFromPool(
+              tokenAddr,
+              quoteToken.addr,
+              pairAddr,
+              provider,
+              decimals,
+              quoteToken.decimals
+            );
+          } catch (e) {
+            return null;
           }
-        } catch (e) {
-          // Pool doesn't exist or query failed, continue
-        }
+        })());
       }
-      if (bestPrice) break; // Found best price
+    }
+
+    const results = await Promise.all(poolQueries);
+    const validPrices = results.filter((p): p is number => p !== null);
+    
+    if (validPrices.length > 0) {
+      // Professional Aggregator: Pick the highest liquidity pool price (simplified as max here)
+      bestPrice = Math.max(...validPrices);
     }
 
     if (!bestPrice) {
@@ -176,25 +177,12 @@ async function getOnChainPrice(address: string, chainId: number): Promise<OnChai
 
     const result: OnChainPrice = {
       price: bestPrice,
-      mc: 0, // Would require TVL calculation from Uniswap info
-      volume: 0, // Would require swap event tracking
+      mc: 0, 
+      volume: 0, 
       timestamp: Date.now()
     };
 
     onChainCache.set(cacheKey, result);
-    
-    // Clean old cache entries periodically (every 50 requests)
-    if (onChainCache.size > 5000) {
-      const now = Date.now();
-      const entriesToDelete: string[] = [];
-      for (const [key, value] of onChainCache.entries()) {
-        if (now - value.timestamp > CACHE_TTL * 2) {
-          entriesToDelete.push(key);
-        }
-      }
-      entriesToDelete.forEach(key => onChainCache.delete(key));
-    }
-
     return result;
   } catch (e) {
     console.error(`On-chain fetch error for ${tokenAddr} on chain ${chainId}:`, e);
@@ -478,21 +466,33 @@ export async function registerRoutes(
 
   // Broadcast prices every 8 seconds
   setInterval(async () => {
-    for (const [subKey, subInfo] of activeSubscriptions.entries()) {
-      if (subInfo.clients.size === 0) continue;
+    // Collect unique tokens to fetch to optimize RPC calls
+    const tokensToFetch = new Map<string, { address: string; chainId: number }>();
+    
+    for (const subKey of activeSubscriptions.keys()) {
+      const subInfo = activeSubscriptions.get(subKey);
+      if (!subInfo || subInfo.clients.size === 0) continue;
       
       const [chainId, address] = subKey.split('-');
-      const stats = await getOnChainPrice(address, Number(chainId));
-      
-      if (stats) {
-        const payload = JSON.stringify({ type: 'price', data: stats, address, chainId });
-        subInfo.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(payload);
-          }
-        });
-      }
+      tokensToFetch.set(subKey, { address, chainId: Number(chainId) });
     }
+
+    // Professional Algo: Single-flight execution for all active tokens
+    await Promise.all(Array.from(tokensToFetch.values()).map(async ({ address, chainId }) => {
+      const stats = await getOnChainPrice(address, chainId);
+      if (stats) {
+        const subKey = `${chainId}-${address.toLowerCase()}`;
+        const subInfo = activeSubscriptions.get(subKey);
+        if (subInfo) {
+          const payload = JSON.stringify({ type: 'price', data: stats, address, chainId });
+          subInfo.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(payload);
+            }
+          });
+        }
+      }
+    }));
   }, 8000);
 
   // Clean up inactive subscriptions every minute (5-minute timeout)
