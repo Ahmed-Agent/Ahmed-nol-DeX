@@ -309,6 +309,13 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
     return idx === -1 ? 0 : idx + 1;
   };
 
+  const auraLabels = ['#1 ALPHA', '#2 ALPHA', '#3 ALPHA'];
+  const auraGlows = [
+    '0 0 20px rgba(255, 215, 0, 0.4)', // Gold
+    '0 0 15px rgba(192, 192, 192, 0.3)', // Silver
+    '0 0 10px rgba(205, 127, 50, 0.2)' // Bronze
+  ];
+
   const chainColors = getChainColors(chain);
 
   const handleChatButtonClick = () => {
@@ -458,14 +465,36 @@ export function ChatPanel({ isOpen: externalIsOpen, onOpenChange }: ChatPanelPro
             return (
               <div 
                 key={msg.id} 
-                className="chat-msg"
+                className={`chat-msg ${auraRank > 0 ? 'aura-msg aura-' + auraRank : ''}`}
                 data-testid={`chat-msg-${msg.id}`}
                 style={{
                   position: 'relative',
-                  transition: 'all 0.3s ease'
+                  transition: 'all 0.3s ease',
+                  boxShadow: auraRank > 0 ? auraGlows[auraRank - 1] : 'none',
+                  border: auraRank > 0 ? `1px solid ${chainColors.primary}44` : 'none',
+                  background: auraRank > 0 ? 'rgba(255,255,255,0.03)' : 'transparent',
+                  padding: auraRank > 0 ? '12px' : '8px 4px',
+                  borderRadius: auraRank > 0 ? '12px' : '0px',
+                  margin: auraRank > 0 ? '8px 4px' : '0px'
                 }}
               >
-                
+                {auraRank > 0 && (
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '-10px', 
+                    right: '10px', 
+                    background: chainColors.primary, 
+                    color: '#fff', 
+                    fontSize: '9px', 
+                    fontWeight: 900, 
+                    padding: '2px 8px', 
+                    borderRadius: '10px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    zIndex: 10
+                  }}>
+                    {auraLabels[auraRank - 1]}
+                  </div>
+                )}
                 {/* Message content */}
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '12px', color: getUsernameColor(msg.username), marginBottom: '4px' }}>

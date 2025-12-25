@@ -197,12 +197,16 @@ async function fetchMarketData(): Promise<Map<string, TokenStats>> {
 async function loadTokensFromSelfHosted(chainId: number): Promise<Token[] | null> {
   try {
     const filename = chainId === 1 ? 'eth-tokens.json' : 'polygon-tokens.json';
-    const response = await fetchWithTimeout(`/api/tokens/${chainId === 1 ? 'ethereum' : 'polygon'}`, {}, 5000);
+    const response = await fetchWithTimeout(`/api/tokens/${filename}`, {}, 5000);
     
     if (!response.ok) {
-      console.log(`Self-hosted API /api/tokens/${chainId === 1 ? 'ethereum' : 'polygon'} not found (${response.status}), trying public fallback...`);
-      const fallbackRes = await fetchWithTimeout(`/${filename}`, {}, 5000);
-      if (!fallbackRes.ok) return null;
+      console.log(`Self-hosted API /api/tokens/${filename} not found (${response.status}), trying root fallback...`);
+      // Use absolute URL for fallback to ensure it works from any page
+      const fallbackRes = await fetchWithTimeout(`${window.location.origin}/${filename}?v=${Date.now()}`, {}, 5000);
+      if (!fallbackRes.ok) {
+        console.error(`Fallback fetch failed for ${filename}: ${fallbackRes.status}`);
+        return null;
+      }
       const data = await fallbackRes.json();
       const tokens = (Array.isArray(data) ? data : (data.tokens || [])) as any[];
       return tokens.map((t: any) => ({
@@ -215,8 +219,6 @@ async function loadTokensFromSelfHosted(chainId: number): Promise<Token[] | null
     }
     
     const data = await response.json();
-    
-    // Wrap tokens in the expected structure if it's just an array
     const tokens = (Array.isArray(data) ? data : (data.tokens || [])) as any[];
     
     if (tokens.length === 0) {
@@ -314,28 +316,58 @@ export async function loadTokensForChain(chainId: number): Promise<void> {
 
     tokenList.forEach((t) => tokenMap.set(t.address, t));
 
-    const nativeAddr = chainId === 1 
+    const nativeAddr = cid === 1 
       ? '0x0000000000000000000000000000000000000000'
       : low(config.maticAddr);
     
+    const ethToken = {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      name: 'Ethereum',
+      decimals: 18,
+      logoURI: '',
+    };
+    
+    const maticToken = {
+      address: low(config.maticAddr),
+      symbol: 'MATIC',
+      name: 'Polygon',
+      decimals: 18,
+      logoURI: '',
+    };
+
     if (!tokenMap.has(nativeAddr)) {
-      tokenMap.set(nativeAddr, {
-        address: nativeAddr,
-        symbol: chainId === 1 ? 'ETH' : 'MATIC',
-        name: chainId === 1 ? 'Ethereum' : 'Polygon',
-        decimals: 18,
-        logoURI: '',
-      });
+      tokenMap.set(nativeAddr, cid === 1 ? ethToken : maticToken);
+    }
+
+    // Force add WETH and USDC to the list if missing for ETH chain
+    if (chainId === 1) {
+      const wethAddr = low('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2');
+      const usdcAddr = low('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48');
+      
+      if (!tokenMap.has(wethAddr)) {
+        tokenMap.set(wethAddr, { address: wethAddr, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18, logoURI: '' });
+        tokenList.unshift(tokenMap.get(wethAddr)!);
+      }
+      if (!tokenMap.has(usdcAddr)) {
+        tokenMap.set(usdcAddr, { address: usdcAddr, symbol: 'USDC', name: 'USD Coin', decimals: 6, logoURI: '' });
+        tokenList.unshift(tokenMap.get(usdcAddr)!);
+      }
+      if (!tokenMap.has(ethToken.address)) {
+        tokenList.unshift(ethToken);
+      }
     }
 
     const seen = new Set<string>();
     tokenList = tokenList.filter((t) => {
       if (!t || !t.address) return false;
-      if (seen.has(t.address)) return false;
-      seen.add(t.address);
+      const addr = low(t.address);
+      if (seen.has(addr)) return false;
+      seen.add(addr);
       return true;
     });
 
+    console.log(`[loadTokensForChain] Final list size for chain ${chainId}: ${tokenList.length}`);
     tokenListByChain.set(chainId, tokenList);
     tokenMapByChain.set(chainId, tokenMap);
 
@@ -364,7 +396,21 @@ export async function loadTokensAndMarkets(): Promise<void> {
 
 export function getTokenList(chainId?: number): Token[] {
   const cid = chainId ?? config.chainId;
-  return tokenListByChain.get(cid) || [];
+  const list = tokenListByChain.get(cid) || [];
+  if (list.length === 0) {
+    // If not loaded, return some basics to avoid empty UI
+    const nativeAddr = cid === 1 
+      ? '0x0000000000000000000000000000000000000000'
+      : low(config.maticAddr);
+    return [{
+      address: nativeAddr,
+      symbol: cid === 1 ? 'ETH' : 'MATIC',
+      name: cid === 1 ? 'Ethereum' : 'Polygon',
+      decimals: 18,
+      logoURI: '',
+    }];
+  }
+  return list;
 }
 
 export function getTokenMap(chainId?: number): Map<string, Token> {
@@ -652,9 +698,18 @@ export async function searchTokens(query: string, chainId?: number): Promise<Tok
 
   const withStats = matches.map((t) => {
     const stats = getStatsByTokenAddress(t.address, cid);
-    const startBonus = (t.symbol.toLowerCase().startsWith(q) || t.name.toLowerCase().startsWith(q)) ? 1e15 : 0;
+    const symbolLower = (t.symbol || '').toLowerCase();
+    const nameLower = (t.name || '').toLowerCase();
     
-    const marketCap = stats?.marketCap || (stats?.price && stats?.volume24h ? (stats.price * stats.volume24h * 0.01) : 0);
+    // Major exact match bonus
+    let startBonus = 0;
+    if (symbolLower === q || nameLower === q) {
+      startBonus = 1e20;
+    } else if (symbolLower.startsWith(q) || nameLower.startsWith(q)) {
+      startBonus = 1e15;
+    }
+    
+    const marketCap = stats?.marketCap || 0;
     const v24 = stats?.volume24h || 0;
     
     const score = startBonus + (marketCap * 10) + v24;
@@ -683,6 +738,15 @@ export function getTopTokens(limit = 14, chainId?: number): { token: Token; stat
     const mcB = b.stats?.marketCap || 0;
     return mcB - mcA;
   });
+
+  // Fallback: If still nothing for ETH, use some hardcoded defaults
+  if (sorted.length === 0 && cid === 1) {
+    return [
+      { token: { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', name: 'Ethereum', decimals: 18, logoURI: '' }, stats: null },
+      { token: { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', name: 'USD Coin', decimals: 6, logoURI: '' }, stats: null },
+      { token: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', name: 'Tether USD', decimals: 6, logoURI: '' }, stats: null }
+    ].slice(0, limit);
+  }
 
   return sorted.slice(0, limit);
 }
