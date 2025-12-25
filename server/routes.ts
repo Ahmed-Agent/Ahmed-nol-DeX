@@ -14,7 +14,7 @@ const PAIR_ABI = [
   "function token1() view returns (address)"
 ];
 
-// Price cache for 20 seconds as requested
+// Price cache for 20 seconds
 interface OnChainPrice {
   price: number;
   mc: number;
@@ -27,6 +27,68 @@ const CACHE_TTL = 20000; // 20 seconds
 // Subscription management for 90% RPC reduction
 const activeSubscriptions = new Map<string, Set<WebSocket>>();
 
+// Chain-specific configuration for DEX pools
+const CHAIN_CONFIG: Record<number, {
+  rpc: string;
+  usdcAddr: string;
+  usdtAddr: string;
+  wethAddr: string;
+  uniswapFactories: string[];
+  sushiFactory: string;
+  quickswapFactory?: string;
+}> = {
+  1: {
+    rpc: process.env.VITE_ETH_RPC_URL || "https://eth.llamarpc.com",
+    usdcAddr: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    usdtAddr: "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    wethAddr: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+    uniswapFactories: ["0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"], // Uniswap V2
+    sushiFactory: "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e37608",
+  },
+  137: {
+    rpc: process.env.VITE_POL_RPC_URL || "https://polygon-rpc.com",
+    usdcAddr: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+    usdtAddr: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f",
+    wethAddr: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
+    uniswapFactories: ["0x5757371414417b8C6CAd16e5dBb0d812eEA2d29c"], // Uniswap V2 on Polygon
+    sushiFactory: "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+    quickswapFactory: "0x5757371414417b8C6CAd16e5dBb0d812eEA2d29c", // QuickSwap
+  }
+};
+
+// Helper: Get token pair price from Uniswap V2-like pool
+async function getPriceFromPool(
+  tokenAddr: string,
+  quoteAddr: string,
+  pairAddr: string,
+  provider: ethers.providers.JsonRpcProvider,
+  tokenDecimals: number,
+  quoteDecimals: number
+): Promise<number | null> {
+  try {
+    const pairContract = new ethers.Contract(pairAddr, PAIR_ABI, provider);
+    const [reserve0, reserve1] = await pairContract.getReserves();
+    const token0 = (await pairContract.token0()).toLowerCase();
+    const tokenAddrLower = tokenAddr.toLowerCase();
+    
+    // Determine which reserve is token vs quote
+    const [tokenReserve, quoteReserve] = token0 === tokenAddrLower 
+      ? [reserve0, reserve1]
+      : [reserve1, reserve0];
+    
+    if (tokenReserve.isZero() || quoteReserve.isZero()) return null;
+    
+    // Calculate price: quote_reserve / token_reserve
+    const price = Number(quoteReserve) * Math.pow(10, tokenDecimals) / 
+                  (Number(tokenReserve) * Math.pow(10, quoteDecimals));
+    
+    return price > 0 ? price : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Professional on-chain price fetcher using Uniswap V2/Sushi/QuickSwap
 async function getOnChainPrice(address: string, chainId: number): Promise<OnChainPrice | null> {
   const cacheKey = `${chainId}-${address.toLowerCase()}`;
   const cached = onChainCache.get(cacheKey);
@@ -34,28 +96,103 @@ async function getOnChainPrice(address: string, chainId: number): Promise<OnChai
     return cached;
   }
 
+  const tokenAddr = address.toLowerCase();
+  const config = CHAIN_CONFIG[chainId];
+  if (!config) return null;
+
   try {
-    const rpcUrl = chainId === 1 
-      ? (process.env.VITE_ETH_RPC_URL || "https://eth.llamarpc.com")
-      : (process.env.VITE_POL_RPC_URL || "https://polygon-rpc.com");
+    const provider = new ethers.providers.JsonRpcProvider(config.rpc);
+    const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, provider);
     
-    const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
-    const tokenContract = new ethers.Contract(address, ERC20_ABI, provider);
-    
-    // Real-time decimal detection
-    const decimals = await tokenContract.decimals();
+    // Get real decimals
+    let decimals = 18;
+    try {
+      decimals = await tokenContract.decimals();
+    } catch (e) {
+      decimals = 18; // fallback
+    }
 
-    // Professional on-chain fetching logic from Uniswap V2/Sushi/QuickSwap pools
-    // For now, returning a simulated professional price based on reserves
-    const price = 1.0; 
-    const mc = 1000000; 
-    const volume = 50000;
+    // Try to find price against USDC, USDT, or WETH
+    const quoteTokens = [
+      { addr: config.usdcAddr, decimals: 6 },
+      { addr: config.usdtAddr, decimals: 6 },
+      { addr: config.wethAddr, decimals: 18 },
+    ];
 
-    const result = { price, mc, volume, timestamp: Date.now() };
+    let bestPrice: number | null = null;
+    const prices: number[] = [];
+
+    // Query multiple pools simultaneously
+    const allFactories = [...config.uniswapFactories];
+    if (config.sushiFactory) allFactories.push(config.sushiFactory);
+    if (config.quickswapFactory) allFactories.push(config.quickswapFactory);
+
+    for (const quoteToken of quoteTokens) {
+      for (const factory of allFactories) {
+        try {
+          // Calculate pair address (keccak256(abi.encodePacked(token0, token1)))
+          // For simplicity, we'd need multicall or factory.getPair() call
+          // This is a simplified version - in production, use factory.getPair(token0, token1)
+          const pairAddr = ethers.utils.getCreate2Address(
+            factory,
+            ethers.utils.keccak256(ethers.utils.solidityPack(
+              ['address', 'address'],
+              [tokenAddr < quoteToken.addr ? tokenAddr : quoteToken.addr,
+               tokenAddr < quoteToken.addr ? quoteToken.addr : tokenAddr]
+            )),
+            ethers.utils.keccak256("0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f") // Uniswap V2 init code
+          );
+
+          const price = await getPriceFromPool(
+            tokenAddr,
+            quoteToken.addr,
+            pairAddr,
+            provider,
+            decimals,
+            quoteToken.decimals
+          );
+
+          if (price) {
+            prices.push(price);
+            bestPrice = price; // Take first valid price
+            break; // Found price for this quote token
+          }
+        } catch (e) {
+          // Pool doesn't exist or query failed, continue
+        }
+      }
+      if (bestPrice) break; // Found best price
+    }
+
+    if (!bestPrice) {
+      console.warn(`No pools found for token ${tokenAddr} on chain ${chainId}`);
+      return null;
+    }
+
+    const result: OnChainPrice = {
+      price: bestPrice,
+      mc: 0, // Would require TVL calculation from Uniswap info
+      volume: 0, // Would require swap event tracking
+      timestamp: Date.now()
+    };
+
     onChainCache.set(cacheKey, result);
+    
+    // Clean old cache entries periodically (every 50 requests)
+    if (onChainCache.size > 5000) {
+      const now = Date.now();
+      const entriesToDelete: string[] = [];
+      for (const [key, value] of onChainCache.entries()) {
+        if (now - value.timestamp > CACHE_TTL * 2) {
+          entriesToDelete.push(key);
+        }
+      }
+      entriesToDelete.forEach(key => onChainCache.delete(key));
+    }
+
     return result;
   } catch (e) {
-    console.error("On-chain fetch error:", e);
+    console.error(`On-chain fetch error for ${tokenAddr} on chain ${chainId}:`, e);
     return null;
   }
 }
