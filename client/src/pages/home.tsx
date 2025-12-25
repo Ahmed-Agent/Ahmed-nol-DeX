@@ -315,32 +315,6 @@ export default function Home() {
     let newFromToken = tokenMap.get(fromTokenAddr);
     let newToToken = tokenMap.get(toTokenAddr);
     
-    // Native ETH for Ethereum chain (using 0x standard address)
-    if (chainType === 'ETH' && !newFromToken) {
-      newFromToken = {
-        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
-        symbol: 'ETH',
-        name: 'Ethereum',
-        decimals: 18,
-        logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
-        chainId: 1,
-      } as ExtendedToken;
-      console.log('[ETH Defaults] Created native ETH token with 0x standard address');
-    }
-    
-    // Native ETH fallback for ETH toToken
-    if (chainType === 'ETH' && !newToToken) {
-      newToToken = {
-        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
-        symbol: 'ETH',
-        name: 'Ethereum',
-        decimals: 18,
-        logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
-        chainId: 1,
-      } as ExtendedToken;
-      console.log('[ETH Defaults] Created native ETH token as toToken with 0x standard address');
-    }
-    
     if (newFromToken) {
       newFromToken = { ...newFromToken, chainId: targetChainId } as ExtendedToken;
       setFromToken(newFromToken);
