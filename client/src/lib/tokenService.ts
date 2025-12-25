@@ -182,10 +182,10 @@ async function fetchMarketData(): Promise<Map<string, TokenStats>> {
 async function loadTokensFromSelfHosted(chainId: number): Promise<Token[] | null> {
   try {
     const filename = chainId === 1 ? 'eth-tokens.json' : 'polygon-tokens.json';
-    const response = await fetchWithTimeout(`/${filename}`, {}, 5000);
+    const response = await fetchWithTimeout(`/api/tokens/${filename}`, {}, 5000);
     
     if (!response.ok) {
-      console.log(`Self-hosted ${filename} not found (${response.status}), will use fallback`);
+      console.log(`Self-hosted ${filename} not found (${response.status})`);
       return null;
     }
     
@@ -590,6 +590,7 @@ async function fetchGeckoTerminalPrice(addr: string, chainId?: number): Promise<
   }
 }
 
+// Removed external price fetching as requested.
 export async function getTokenPriceUSD(address: string, decimals = 18, chainId?: number): Promise<number | null> {
   if (!address) return null;
   const addr = low(address);
@@ -597,57 +598,18 @@ export async function getTokenPriceUSD(address: string, decimals = 18, chainId?:
   // Ensure chainId is always valid (1 for Ethereum, 137 for Polygon)
   const validChainId = (chainId === 1 || chainId === 137) ? chainId : config.chainId;
   
-  // CRITICAL: In BRG mode, never use cached prices across chains
-  // Always verify chainId matches to prevent cross-chain price corruption
-  const cacheKey = `${validChainId}-${addr}`;
-  const cached = priceCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < config.priceCacheTtl) {
-    // Double-check the cached price is reasonable before returning
-    if (cached.price && cached.price > 0.000001) {
-      return cached.price;
+  // Removed internal price caching logic as per requirements.
+  // We will rely on server-side 20s caching.
+  try {
+    const res = await fetch(`/api/prices/onchain?address=${addr}&chainId=${validChainId}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.price || null;
     }
+  } catch (e) {
+    console.error('On-chain price fetch error:', e);
   }
-
-  const sources = [
-    { name: 'coingecko_simple', fn: () => fetchCoingeckoSimple(addr, validChainId), priority: 1, retries: 2 },
-    { name: '0x', fn: () => fetch0xPrice(addr, validChainId), priority: 2, retries: 2 },
-    { name: '1inch', fn: () => fetch1InchQuotePrice(addr, decimals, validChainId), priority: 3, retries: 2 },
-    { name: 'dexscreener', fn: () => fetchDexscreenerPrice(addr, validChainId), priority: 4, retries: 1 },
-    { name: 'geckoterminal', fn: () => fetchGeckoTerminalPrice(addr, validChainId), priority: 5, retries: 1 },
-  ];
-
-  let best: { price: number; priority: number } | null = null;
-
-  for (const source of sources) {
-    for (let attempt = 0; attempt <= source.retries; attempt++) {
-      try {
-        const price = await source.fn();
-        // CRITICAL: Filter out unreasonable prices (< 0.000001) which indicate wrong chain lookups
-        if (price && Number.isFinite(price) && price > 0.000001) {
-          if (!best || source.priority < best.priority) {
-            best = { price, priority: source.priority };
-            break;
-          }
-        }
-      } catch (e) {
-        if (attempt === source.retries) {
-          console.warn(`${source.name} failed after ${source.retries + 1} attempts`);
-        }
-        if (attempt < source.retries) {
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-      }
-    }
-    
-    if (best && best.priority <= 2) break;
-  }
-
-  const finalPrice = best?.price ?? null;
-  // Only cache valid prices to prevent cross-chain corruption
-  if (finalPrice && finalPrice > 0.000001) {
-    priceCache.set(cacheKey, { price: finalPrice, ts: Date.now() });
-  }
-  return finalPrice;
+  return null;
 }
 
 export async function searchTokens(query: string, chainId?: number): Promise<Token[]> {

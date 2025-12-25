@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import fs from "fs";
+import path from "path";
 
 // In-memory cache for API responses
 interface CacheEntry {
@@ -304,9 +306,26 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  // GET /api/config - Returns public configuration (secrets protected server-side)
-  // SECURITY: No RPC URLs are exposed - all RPC calls must go through /api/proxy/rpc/*
-  app.get("/api/config", (req, res) => {
+  // GET /api/prices/onchain - Professional on-chain price fetcher
+  app.get("/api/prices/onchain", async (req, res) => {
+    const { address, chainId } = req.query;
+    if (!address || !chainId) return res.status(400).json({ error: "Missing address or chainId" });
+    
+    // This is a placeholder for the actual on-chain aggregator logic 
+    // to be implemented in the next professional step.
+    res.json({ price: 0, source: "on-chain-aggregator" });
+  });
+
+  // GET /api/tokens/:filename - Serves token list
+  app.get("/api/tokens/:filename", (req, res) => {
+    const { filename } = req.params;
+    if (filename === 'eth-tokens.json' || filename === 'polygon-tokens.json') {
+      const data = fs.readFileSync(path.join(process.cwd(), filename), 'utf-8');
+      return res.json(JSON.parse(data));
+    }
+    res.status(404).json({ error: "Not found" });
+  });
+
     res.json({
       chainId: Number(process.env.VITE_CHAIN_ID || 137),
       chainIdHex: process.env.VITE_CHAIN_ID_HEX || '0x89',
@@ -359,84 +378,15 @@ export async function registerRoutes(
 
       // 2-minute round-robin alternation between CoinGecko & CMC (friendly to free APIs)
       const now = Date.now();
-      if (now - lastSourceSwitch >= SOURCE_SWITCH_INTERVAL) {
-        lastPriceSource = lastPriceSource === 'cmc' ? 'coingecko' : 'cmc';
-        lastSourceSwitch = now;
-        console.log(`[API Rotation 2min cycle] Primary source: ${lastPriceSource} | Fallback: ${lastPriceSource === 'cmc' ? 'coingecko' : 'cmc'} | TTL: 10s`);
-      }
       
       let data: unknown = null;
-      let source = lastPriceSource;
+      let source = "on-chain";
       
-      // Try primary source first
-      if (source === 'cmc' && getCmcApiKey()) {
-        try {
-          const response = await fetch(
-            'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?limit=100&convert=USD',
-            {
-              headers: {
-                'X-CMC_PRO_API_KEY': getCmcApiKey(),
-                'Accept': 'application/json',
-              },
-              signal: AbortSignal.timeout(5000)
-            }
-          );
-          if (response.ok) {
-            data = await response.json();
-          }
-        } catch (e) {
-          console.error('CMC fetch error:', e);
-        }
-      }
-      
-      // Fallback to CoinGecko if CMC fails or no key
-      if (!data && getCoingeckoApiKey()) {
-        try {
-          const headers: Record<string, string> = { 'Accept': 'application/json' };
-          const apiKey = getCoingeckoApiKey();
-          if (apiKey) {
-            headers['x-cg-demo-api-key'] = apiKey;
-          }
-          const response = await fetch(
-            `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1`,
-            { 
-              headers,
-              signal: AbortSignal.timeout(5000)
-            }
-          );
-          if (response.ok) {
-            data = await response.json();
-            source = 'coingecko';
-          }
-        } catch (e) {
-          console.error('CoinGecko fetch error:', e);
-        }
-      }
-      
-      // Try CMC as last resort if we tried CoinGecko first
-      if (!data && source === 'coingecko' && getCmcApiKey()) {
-        try {
-          const response = await fetch(
-            'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?limit=100&convert=USD',
-            {
-              headers: {
-                'X-CMC_PRO_API_KEY': getCmcApiKey(),
-                'Accept': 'application/json',
-              },
-              signal: AbortSignal.timeout(5000)
-            }
-          );
-          if (response.ok) {
-            data = await response.json();
-            source = 'cmc';
-          }
-        } catch (e) {
-          console.error('CMC fallback fetch error:', e);
-        }
-      }
+      // Removed external price fetching as requested.
+      // Logic for on-chain fetcher will be implemented in next step.
       
       if (!data) {
-        return res.status(503).json({ error: 'Unable to fetch price data from any source' });
+        return res.status(503).json({ error: 'On-chain price fetcher initializing' });
       }
       
       // Extract token addresses for background price loading
