@@ -1,4 +1,18 @@
-// SECURITY: All API keys are protected server-side. Only public config is exposed here.
+// Load default tokens for initial selection
+import ethTokens from '../../public/eth-tokens.json';
+import polTokens from '../../public/polygon-tokens.json';
+
+const defaultEth = (ethTokens as any[]).find((t: any) => t.symbol === 'ETH' || t.symbol === 'WETH') || ethTokens[0];
+const defaultPol = (polTokens as any[]).find((t: any) => t.symbol === 'MATIC' || t.symbol === 'POL') || polTokens[0];
+const defaultUsdtEth = (ethTokens as any[]).find((t: any) => t.symbol === 'USDT') || ethTokens[1];
+const defaultUsdtPol = (polTokens as any[]).find((t: any) => t.symbol === 'USDT') || polTokens[1];
+
+export const DEFAULT_TOKENS = {
+  1: { from: defaultEth, to: defaultUsdtEth },
+  137: { from: defaultPol, to: defaultUsdtPol }
+};
+
+// SECURITY: All API keys are protected server-side.
 // RPC URLs, API keys, and secrets are fetched from /api/config at runtime.
 
 // Server config cache

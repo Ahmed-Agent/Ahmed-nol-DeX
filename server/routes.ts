@@ -95,29 +95,34 @@ async function getPriceFromPool(
   }
 }
 
-// Professional on-chain price fetcher using Uniswap V2/Sushi/QuickSwap
+// On-chain price fetcher using Uniswap V2/Sushi/QuickSwap (Super Scalable)
 async function getOnChainPrice(address: string, chainId: number): Promise<OnChainPrice | null> {
   const cacheKey = `${chainId}-${address.toLowerCase()}`;
+  
+  // Single-flight lock: avoid parallel requests for same token
+  if (priceFetchingLocks.has(cacheKey)) {
+    // Return cached version if exists, or wait for next interval
+    return onChainCache.get(cacheKey) || null;
+  }
+  
   const cached = onChainCache.get(cacheKey);
-  // Return cache if valid (20 seconds) or if it's a failure cache (5 seconds)
-  if (cached && Date.now() - cached.timestamp < (cached.price === 0 ? 5000 : CACHE_TTL)) {
+  // Return cache if valid (20 seconds)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached;
   }
 
+  priceFetchingLocks.add(cacheKey);
+  setTimeout(() => priceFetchingLocks.delete(cacheKey), 1500); // 1.5s SingleFlight window
+
   const tokenAddr = address.toLowerCase();
   const config = CHAIN_CONFIG[chainId];
-  if (!config) {
-    // Cache null result briefly
-    const failCache: OnChainPrice = { price: 0, mc: 0, volume: 0, timestamp: Date.now() };
-    onChainCache.set(cacheKey, failCache);
-    return null;
-  }
+  if (!config) return null;
 
   try {
     const provider = new ethers.providers.JsonRpcProvider(config.rpc);
     const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, provider);
     
-    // Get real decimals - DO NOT ASSUME
+    // Discovery logic remains...
     let decimals = 18;
     try {
       decimals = await tokenContract.decimals();
@@ -554,8 +559,17 @@ export async function registerRoutes(
   wss.on('connection', (ws) => {
     let currentToken: string | null = null;
 
-    // Unified price update handler for suggestions and active subscriptions
+    // Unified price update handler for active subscriptions
     async function handlePriceRequest(address: string, chainId: number, ws?: WebSocket) {
+      const lockKey = `${chainId}-${address.toLowerCase()}`;
+      if (priceFetchingLocks.has(lockKey)) {
+        const stats = onChainCache.get(lockKey);
+        if (stats && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'price', data: stats, address, chainId }));
+        }
+        return stats;
+      }
+
       const stats = await getOnChainPrice(address, chainId);
       if (stats && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'price', data: stats, address, chainId }));
@@ -608,14 +622,22 @@ export async function registerRoutes(
     });
   });
 
-      // Broadcast prices every 8 seconds
+// Broadcast prices every 8 seconds
   setInterval(async () => {
     // Collect unique tokens to fetch to optimize RPC calls
     const tokensToFetch = new Map<string, { address: string; chainId: number }>();
     
     const subKeys = Array.from(activeSubscriptions.keys());
+    const now = Date.now();
     for (const subKey of subKeys) {
       const subInfo = activeSubscriptions.get(subKey);
+      
+      // Auto-unsubscribe logic: TTL 5 minutes of inactivity
+      if (subInfo && now - subInfo.lastSeen > SUBSCRIPTION_TIMEOUT) {
+        activeSubscriptions.delete(subKey);
+        continue;
+      }
+
       if (!subInfo || subInfo.clients.size === 0) continue;
       
       const [chainId, address] = subKey.split('-');
@@ -623,14 +645,32 @@ export async function registerRoutes(
     }
 
     // Professional Algo: Single-flight execution for all active tokens
-    // Fetches 450 per chain in 10s intervals total (roughly 1.5s per batch if many)
     await Promise.all(Array.from(tokensToFetch.values()).map(async ({ address, chainId }) => {
       // Single-flight lock: avoid parallel requests for same token
       const lockKey = `${chainId}-${address.toLowerCase()}`;
       if (priceFetchingLocks.has(lockKey)) return;
-      priceFetchingLocks.add(lockKey);
       
       try {
+        await getOnChainPrice(address, chainId);
+      } catch (e) {
+        console.error("Price fetch interval error:", e);
+      }
+    }));
+
+    // Send updates to clients
+    activeSubscriptions.forEach((subInfo, subKey) => {
+      const stats = onChainCache.get(subKey);
+      if (stats && stats.price > 0) {
+        const [chainId, address] = subKey.split('-');
+        const msg = JSON.stringify({ type: 'price', data: stats, address, chainId: Number(chainId) });
+        subInfo.clients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(msg);
+          }
+        });
+      }
+    });
+  }, 8000);
         const stats = await getOnChainPrice(address, chainId);
         if (stats) {
           const subInfo = activeSubscriptions.get(lockKey);

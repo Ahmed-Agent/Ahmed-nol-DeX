@@ -1,18 +1,1 @@
-[
-  {
-    "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-    "symbol": "WETH",
-    "name": "Wrapped Ether",
-    "decimals": 18,
-    "chainId": 1,
-    "logoURI": ""
-  },
-  {
-    "address": "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270",
-    "symbol": "WMATIC",
-    "name": "Wrapped Matic",
-    "decimals": 18,
-    "chainId": 137,
-    "logoURI": ""
-  }
-]
+[]
