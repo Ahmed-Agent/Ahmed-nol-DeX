@@ -24,7 +24,7 @@ export async function initializeWagmiConfig(): Promise<void> {
 
 // Get project ID
 function getProjectId(): string {
-  return walletConnectProjectId || config.walletConnectProjectId || '';
+  return walletConnectProjectId || config.walletConnectProjectId || 'a677f78b8dcc7d46f94a1d047c2f9241';
 }
 
 const projectId = getProjectId();
@@ -32,17 +32,14 @@ const projectId = getProjectId();
 // Polyfill for AppKit/WalletConnect listing resolution error
 if (typeof window !== 'undefined') {
   // @ts-ignore
-  if (!window.getRecomendedWallets) {
-    // @ts-ignore
-    window.getRecomendedWallets = () => ({});
-  }
+  window.getRecomendedWallets = () => ({});
 }
 
 export const wagmiConfig = createConfig({
   chains: [polygon, mainnet],
   connectors: [
     injected(),
-    ...(projectId ? [walletConnect({
+    walletConnect({
       projectId,
       metadata: {
         name: config.siteName,
@@ -51,7 +48,7 @@ export const wagmiConfig = createConfig({
         icons: [typeof window !== 'undefined' ? `${window.location.origin}/logo.gif` : '/logo.gif'],
       },
       showQrModal: true,
-    })] : []),
+    }),
   ],
   transports: {
     // SECURITY: Use server-proxied RPC endpoints - custom RPC URLs with API keys are protected server-side

@@ -31,24 +31,28 @@ async function fetchTokens(chainId: number, platform: string, limit: number) {
       // Try multiple platform keys for compatibility
       let address = null;
       
+      if (!coin.platforms || typeof coin.platforms !== 'object') {
+        return null;
+      }
+      
       // Standard CoinGecko platform names
       if (platform === "ethereum") {
-        address = coin.platforms?.["ethereum"] || coin.platforms?.["ethereum-mainnet"];
-      } else if (platform === "polygon-pos" || platform === "polygon") {
-        address = coin.platforms?.["polygon-pos"] || coin.platforms?.["matic"] || coin.platforms?.["polygon"];
+        address = coin.platforms["ethereum"];
+      } else if (platform === "polygon-pos") {
+        address = coin.platforms["polygon-pos"] || coin.platforms["matic-network"] || coin.platforms["matic"];
       } else {
-        address = coin.platforms?.[platform];
+        address = coin.platforms[platform];
       }
       
       if (!address || address === "") return null;
       
       return {
         address: address.toLowerCase(),
-        name: coin.name,
-        symbol: coin.symbol.toUpperCase(),
+        name: coin.name || '',
+        symbol: (coin.symbol || '').toUpperCase(),
         decimals: 18,
         chainId,
-        logoURI: coin.image
+        logoURI: coin.image || ''
       };
     }).filter((t: any) => t !== null);
 
