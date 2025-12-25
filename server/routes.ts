@@ -371,6 +371,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/tokens/list", async (req, res) => {
+    const { chainId } = req.query;
+    if (!chainId) return res.status(400).json({ error: "Missing chainId" });
+    
+    const cid = Number(chainId);
+    const chainKey = cid === 1 ? 'ethereum' : 'polygon';
+    
+    try {
+      const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
+      const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
+      const tokensList = tokensData[chainKey] || [];
+      
+      // Return fresh tokens from disk
+      res.json(tokensList);
+    } catch (e) {
+      console.error(`[TokenList] Error reading tokens for chain ${cid}:`, e);
+      res.status(500).json({ error: "Failed to load tokens" });
+    }
+  });
+
   app.get("/api/icon", async (req, res) => {
     const { address, chainId } = req.query;
     if (!address || !chainId) return res.status(400).json({ error: "Missing params" });

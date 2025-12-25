@@ -36,48 +36,67 @@ function getChainConfigForId(chainId: number) {
   return config;
 }
 
-// Load tokens from local JSON
-import localTokens from './tokens.json';
-
+// Load tokens from API (fresh from disk) instead of static import to show newly added tokens
 async function loadTokensFromSelfHosted(chainId: number): Promise<Token[] | null> {
-  const chainKey = chainId === 1 ? 'ethereum' : 'polygon';
-  const tokens = (localTokens as any)[chainKey] || [];
-  
-  if (tokens.length === 0) {
-    console.warn(`Local tokens for chain ${chainId} not found in tokens.json`);
+  try {
+    const res = await fetch(`/api/tokens/list?chainId=${chainId}`);
+    if (!res.ok) throw new Error(`Failed to fetch tokens: ${res.status}`);
+    
+    const tokens = await res.json();
+    
+    if (!Array.isArray(tokens) || tokens.length === 0) {
+      console.warn(`No tokens for chain ${chainId}`);
+      return null;
+    }
+    
+    return tokens.map((t: any) => ({
+      address: low(t.address || ''),
+      symbol: t.symbol || '',
+      name: t.name || '',
+      decimals: t.decimals || 18,
+      logoURI: t.logoURI || '',
+    })).filter((t: any) => t.address).filter(isTokenAllowed);
+  } catch (e) {
+    console.error(`Failed to load tokens from API for chain ${chainId}:`, e);
     return null;
   }
+}
+
+async function updateCachedTokens(chainId: number, tokenList: Token[]): Promise<void> {
+  const tokenMap = new Map<string, Token>();
+  tokenList.forEach((t) => tokenMap.set(t.address, t));
+
+  tokenListByChain.set(chainId, tokenList);
+  tokenMapByChain.set(chainId, tokenMap);
+  if (!statsMapByAddressChain.has(chainId)) {
+    statsMapByAddressChain.set(chainId, new Map<string, TokenStats>());
+  }
+
+  console.log(`✓ Loaded ${tokenList.length} tokens for chain ${chainId}`);
   
-  return tokens.map((t: any) => ({
-    address: low(t.address || ''),
-    symbol: t.symbol || '',
-    name: t.name || '',
-    decimals: t.decimals || 18,
-    logoURI: t.logoURI || '',
-  })).filter((t: any) => t.address).filter(isTokenAllowed);
+  // Explicitly check for defaults being in the map
+  const nativeAddr = chainId === 1 ? '0x0000000000000000000000000000000000000000' : '0x0000000000000000000000000000000000001010';
+  if (!tokenMap.has(nativeAddr)) {
+    console.warn(`[TokenService] Native address ${nativeAddr} missing for chain ${chainId}`);
+  }
 }
 
 export async function loadTokensForChain(chainId: number): Promise<void> {
   try {
     const tokenList = await loadTokensFromSelfHosted(chainId) || [];
-    const tokenMap = new Map<string, Token>();
-    tokenList.forEach((t) => tokenMap.set(t.address, t));
-
-    tokenListByChain.set(chainId, tokenList);
-    tokenMapByChain.set(chainId, tokenMap);
-    if (!statsMapByAddressChain.has(chainId)) {
-      statsMapByAddressChain.set(chainId, new Map<string, TokenStats>());
-    }
-
-    console.log(`✓ Loaded ${tokenList.length} tokens for chain ${chainId}`);
-    
-    // Explicitly check for defaults being in the map
-    const nativeAddr = chainId === 1 ? '0x0000000000000000000000000000000000000000' : '0x0000000000000000000000000000000000001010';
-    if (!tokenMap.has(nativeAddr)) {
-      console.warn(`[TokenService] Native address ${nativeAddr} missing for chain ${chainId}`);
-    }
+    await updateCachedTokens(chainId, tokenList);
   } catch (e) {
     console.error(`loadTokensForChain error ${chainId}:`, e);
+  }
+}
+
+export async function refreshTokensForChain(chainId: number): Promise<void> {
+  try {
+    const tokenList = await loadTokensFromSelfHosted(chainId) || [];
+    await updateCachedTokens(chainId, tokenList);
+    console.log(`✓ Token list refreshed for chain ${chainId}`);
+  } catch (e) {
+    console.error(`refreshTokensForChain error ${chainId}:`, e);
   }
 }
 
@@ -86,11 +105,15 @@ export async function loadTokensAndMarkets(): Promise<void> {
     loadTokensForChain(1),
     loadTokensForChain(137)
   ]);
-  // Immediately populate suggestions after loading
-  const { ethereum, polygon } = await import('./tokens.json').then(m => m.default as any);
-  if (ethereum?.length || polygon?.length) {
-    console.log("✓ Pre-loaded token suggestions from JSON");
-  }
+  console.log("✓ Token lists loaded from API");
+  
+  // Auto-refresh every 30 seconds so newly added tokens appear for all users
+  setInterval(() => {
+    Promise.all([
+      refreshTokensForChain(1),
+      refreshTokensForChain(137)
+    ]).catch(e => console.error('[TokenRefresh] Error:', e));
+  }, 30000);
 }
 
 export function getTokenList(chainId?: number): Token[] {
