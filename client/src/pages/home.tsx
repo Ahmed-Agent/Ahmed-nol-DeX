@@ -328,17 +328,17 @@ export default function Home() {
       console.log('[ETH Defaults] Created native ETH token with 0x standard address');
     }
     
-    // USDC fallback for ETH (verified contract)
+    // Native ETH fallback for ETH toToken
     if (chainType === 'ETH' && !newToToken) {
       newToToken = {
-        address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-        symbol: 'USDC',
-        name: 'USD Coin',
-        decimals: 6,
-        logoURI: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
+        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+        symbol: 'ETH',
+        name: 'Ethereum',
+        decimals: 18,
+        logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
         chainId: 1,
       } as ExtendedToken;
-      console.log('[ETH Defaults] Created USDC token with verified address');
+      console.log('[ETH Defaults] Created native ETH token as toToken with 0x standard address');
     }
     
     if (newFromToken) {
