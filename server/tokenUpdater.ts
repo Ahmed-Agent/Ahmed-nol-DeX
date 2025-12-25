@@ -32,17 +32,14 @@ async function fetchCMC(chainId: number) {
 async function fetchCG(platform: string) {
   const tokens: any[] = [];
   const baseUrl = 'https://api.coingecko.com/api/v3';
-  // Use demo key if provided, otherwise try public (limited)
   const headers = COINGECKO_API_KEY ? { 'x-cg-demo-api-key': COINGECKO_API_KEY } : {};
   try {
     console.log(`Fetching top tokens for ${platform} from CoinGecko...`);
-    // First get markets to pick top tokens
     const marketsUrl = `${baseUrl}/coins/markets?vs_currency=usd&category=${platform}-ecosystem&order=market_cap_desc&per_page=250&page=1`;
     const mRes = await fetch(marketsUrl, { headers });
     if (!mRes.ok) throw new Error(`CG markets failed: ${mRes.status}`);
     const marketsData = await mRes.json() as any[];
     
-    // Then get platform addresses
     const listUrl = `${baseUrl}/coins/list?include_platform=true`;
     const lRes = await fetch(listUrl, { headers });
     if (!lRes.ok) throw new Error(`CG list failed: ${lRes.status}`);
@@ -71,12 +68,12 @@ async function fetchCG(platform: string) {
 
 const ETH_FALLBACK = [
   { address: "0x0000000000000000000000000000000000000000", symbol: "ETH", name: "Ethereum", decimals: 18, logoURI: "https://assets.coingecko.com/coins/images/279/large/ethereum.png" },
-  { address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbol: "USDC", name: "USDC", decimals: 6, logoURI: "https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png" }
+  { address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbol: "USDC", name: "USDC", decimals: 6, logoURI: "https://assets.coingecko.com/coins/images/6319/large/usdc.png" }
 ];
 
 const POL_FALLBACK = [
   { address: "0x0000000000000000000000000000000000001010", symbol: "MATIC", name: "Polygon", decimals: 18, logoURI: "https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png" },
-  { address: "0x2791bca1f2de4661ed88a30c99a7a9449Aa84174", symbol: "USDC", name: "USDC", decimals: 6, logoURI: "https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png" }
+  { address: "0x2791bca1f2de4661ed88a30c99a7a9449Aa84174", symbol: "USDC", name: "USDC", decimals: 6, logoURI: "https://assets.coingecko.com/coins/images/6319/large/usdc.png" }
 ];
 
 export async function updateTokenLists() {
@@ -95,7 +92,7 @@ export async function updateTokenLists() {
       if (!t.address || seen.has(t.address)) return false;
       seen.add(t.address);
       return true;
-    }).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 250);
+    }).sort((a: any, b: any) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 250);
   };
 
   const ethereum = dedupe(ethCMC, ethCG, ETH_FALLBACK);
