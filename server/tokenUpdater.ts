@@ -1,73 +1,109 @@
 import fs from "fs";
 import path from "path";
+import axios from "axios";
 
+const CMC_API_KEY = process.env.VITE_CMC_API_KEY || "";
 const COINGECKO_API_KEY = process.env.VITE_COINGECKO_API_KEY || "";
 
-async function fetchCG(platform: string, pages: number) {
-    const tokens = [];
-    const auth = COINGECKO_API_KEY ? `&x_cg_demo_api_key=${COINGECKO_API_KEY}` : "";
-    for (let i = 1; i <= pages; i++) {
-        try {
-            const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${i}${auth}`;
-            const res = await fetch(url);
-            if (res.ok) {
-                const data = await res.json();
-                tokens.push(...data.map((c: any) => {
-                    const addr = (c.platforms?.[platform === 'ethereum' ? 'ethereum' : 'polygon-pos'] || '').toLowerCase();
-                    if (!addr) return null;
-                    return {
-                        address: addr,
-                        symbol: c.symbol.toUpperCase(),
-                        name: c.name,
-                        marketCap: c.market_cap,
-                        logoURI: c.image,
-                        decimals: 18
-                    };
-                }).filter((t: any) => t !== null));
-            }
-        } catch (e) {
-            console.error(`CG fetch error page ${i}:`, e);
-        }
+async function fetchCMC(chainId: number) {
+  if (!CMC_API_KEY) return [];
+  try {
+    console.log(`Fetching top tokens for chain ${chainId} from CMC...`);
+    // CMC ID for Ethereum is usually handled by platform field. 
+    // We'll use listings/latest and filter by platform.
+    const response = await axios.get('https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest', {
+      params: {
+        limit: 1000, // Search deeper to find enough for each chain
+        convert: 'USD',
+        aux: 'platform,symbol,name'
+      },
+      headers: {
+        'X-CMC_PRO_API_KEY': CMC_API_KEY
+      }
+    });
+
+    const cmcChainName = chainId === 1 ? 'Ethereum' : 'Polygon';
+    
+    return response.data.data
+      .filter((c: any) => c.platform?.name === cmcChainName && c.platform?.token_address)
+      .map((c: any) => ({
+        address: c.platform.token_address.toLowerCase(),
+        symbol: c.symbol.toUpperCase(),
+        name: c.name,
+        marketCap: c.quote.USD.market_cap,
+        logoURI: `https://s2.coinmarketcap.com/static/img/coins/64x64/${c.id}.png`,
+        decimals: 18
+      }));
+  } catch (e) {
+    console.error(`CMC fetch error for chain ${chainId}:`, e.message);
+    return [];
+  }
+}
+
+async function fetchCG(platform: string) {
+  const tokens = [];
+  const baseUrl = COINGECKO_API_KEY ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3';
+  const auth = COINGECKO_API_KEY ? (COINGECKO_API_KEY.startsWith('CG-') ? `&x_cg_pro_api_key=${COINGECKO_API_KEY}` : `&x_cg_demo_api_key=${COINGECKO_API_KEY}`) : "";
+  
+  try {
+    console.log(`Fetching top tokens for ${platform} from CoinGecko...`);
+    // Iterate few pages to ensure we get enough addresses
+    for (let page = 1; page <= 2; page++) {
+      const url = `${baseUrl}/coins/markets?vs_currency=usd&category=${platform}-ecosystem&order=market_cap_desc&per_page=250&page=${page}${auth}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        tokens.push(...data.map((c: any) => {
+          const addr = (c.platforms?.[platform === 'ethereum' ? 'ethereum' : 'polygon-pos'] || '').toLowerCase();
+          if (!addr) return null;
+          return {
+            address: addr,
+            symbol: c.symbol.toUpperCase(),
+            name: c.name,
+            marketCap: c.market_cap,
+            logoURI: c.image,
+            decimals: 18
+          };
+        }).filter((t: any) => t !== null));
+      } else {
+        console.warn(`CG fetch page ${page} failed: ${res.status}`);
+        break;
+      }
     }
-    return tokens;
+  } catch (e) {
+    console.error(`CG fetch error for ${platform}:`, e);
+  }
+  return tokens;
 }
 
 export async function updateTokenLists() {
-    console.log("Updating 900 tokens (450 ETH, 450 POL) with multi-source metadata...");
-    
-    const [ethCG, polCG] = await Promise.all([
-        fetchCG('ethereum', 2),
-        fetchCG('polygon-pos', 2)
-    ]);
+  console.log("Updating tokens.json with CMC (primary) and CG (fallback)...");
+  
+  const [ethCMC, polCMC, ethCG, polCG] = await Promise.all([
+    fetchCMC(1),
+    fetchCMC(137),
+    fetchCG('ethereum'),
+    fetchCG('polygon')
+  ]);
 
-    const dedupe = (list: any[]) => {
-        const seen = new Set();
-        return list.filter(t => {
-            if (seen.has(t.address)) return false;
-            seen.add(t.address);
-            return true;
-        }).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 450);
-    };
+  const dedupe = (list1: any[], list2: any[]) => {
+    const combined = [...list1, ...list2];
+    const seen = new Set();
+    return combined.filter(t => {
+      if (!t.address || seen.has(t.address)) return false;
+      seen.add(t.address);
+      return true;
+    }).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 250);
+  };
 
-    const eth = dedupe(ethCG);
-    const pol = dedupe(polCG);
+  const ethereum = dedupe(ethCMC, ethCG);
+  const polygon = dedupe(polCMC, polCG);
 
-    // Save to server side (filesystem)
-    fs.writeFileSync("eth-tokens.json", JSON.stringify(eth, null, 2));
-    fs.writeFileSync("polygon-tokens.json", JSON.stringify(pol, null, 2));
+  const tokensData = { ethereum, polygon };
+  
+  // Update tokens.json
+  const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
+  fs.writeFileSync(tokensPath, JSON.stringify(tokensData, null, 2));
 
-    // Save to client src for direct import (to avoid Vite "Assets in public directory" warning)
-    const clientSrcDir = path.join(process.cwd(), "client", "src", "assets", "tokens");
-    if (!fs.existsSync(clientSrcDir)) fs.mkdirSync(clientSrcDir, { recursive: true });
-
-    fs.writeFileSync(path.join(clientSrcDir, "eth-tokens.json"), JSON.stringify(eth, null, 2));
-    fs.writeFileSync(path.join(clientSrcDir, "polygon-tokens.json"), JSON.stringify(pol, null, 2));
-    
-    // Also save to public for general URL access
-    const publicDir = path.join(process.cwd(), "client", "public");
-    if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
-    fs.writeFileSync(path.join(publicDir, "eth-tokens.json"), JSON.stringify(eth, null, 2));
-    fs.writeFileSync(path.join(publicDir, "polygon-tokens.json"), JSON.stringify(pol, null, 2));
-
-    console.log(`Token list sync complete. Saved ${eth.length} ETH and ${pol.length} POL tokens.`);
+  console.log(`Token list sync complete. Saved ${ethereum.length} ETH and ${polygon.length} POL tokens to tokens.json`);
 }

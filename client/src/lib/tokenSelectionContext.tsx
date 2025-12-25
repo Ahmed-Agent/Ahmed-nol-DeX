@@ -3,9 +3,6 @@ import { Token } from './tokenService';
 import { useChain } from './chainContext';
 import { DEFAULT_TOKENS } from './config';
 
-// Fix: Add explicit cast to satisfy TypeScript
-const typedDefaultTokens: Record<number, { from: any; to: any }> = DEFAULT_TOKENS as any;
-
 interface TokenSelectionContextValue {
   selectedFromToken: Token | null;
   selectedToToken: Token | null;
@@ -16,6 +13,9 @@ interface TokenSelectionContextValue {
 }
 
 const TokenSelectionContext = createContext<TokenSelectionContextValue | null>(null);
+
+// Fix: Add explicit cast to satisfy TypeScript
+const typedDefaultTokens: Record<number, { from: any; to: any }> = DEFAULT_TOKENS as any;
 
 export function TokenSelectionProvider({ children }: { children: ReactNode }) {
   const { chainId } = useChain();
