@@ -29,6 +29,15 @@ function getProjectId(): string {
 
 const projectId = getProjectId();
 
+// Polyfill for AppKit/WalletConnect listing resolution error
+if (typeof window !== 'undefined') {
+  // @ts-ignore
+  if (!window.getRecomendedWallets) {
+    // @ts-ignore
+    window.getRecomendedWallets = () => ({});
+  }
+}
+
 export const wagmiConfig = createConfig({
   chains: [polygon, mainnet],
   connectors: [

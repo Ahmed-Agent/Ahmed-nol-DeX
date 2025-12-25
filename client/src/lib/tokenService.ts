@@ -45,7 +45,9 @@ const statsMapByAddressChain = new Map<number, Map<string, TokenStats>>(); // Ad
 const priceCache = new Map<string, { price: number | null; ts: number }>();
 
 // WebSocket path for real-time prices
-const WS_PRICE_URL = `wss://${window.location.host}/api/ws/prices`;
+const WS_PRICE_URL = typeof window !== 'undefined' 
+  ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws/prices`
+  : '';
 
 let priceWs: WebSocket | null = null;
 const priceCallbacks = new Map<string, (data: any) => void>();
@@ -212,10 +214,11 @@ async function loadTokensFromSelfHosted(chainId: number): Promise<Token[] | null
     }
     
     const data = await response.json();
-    const tokens = (data.tokens || []) as any[];
+    // Wrap tokens in the expected structure if it's just an array
+    const tokens = (Array.isArray(data) ? data : (data.tokens || [])) as any[];
     
-    if (!Array.isArray(tokens) || tokens.length === 0) {
-      console.warn(`Self-hosted ${filename} has invalid or empty tokens array`);
+    if (tokens.length === 0) {
+      console.warn(`Self-hosted ${filename} has empty tokens array`);
       return null;
     }
     
