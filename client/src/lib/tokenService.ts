@@ -1,4 +1,4 @@
-import { config, ethereumConfig, low, fetchWithTimeout } from './config';
+import { config, ethereumConfig, low, fetchWithTimeout, type OnChainPrice } from './config';
 import { ethers } from 'ethers';
 
 export interface Token {

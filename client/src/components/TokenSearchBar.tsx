@@ -1,10 +1,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Token, TokenStats, searchTokens, getTopTokens, getPlaceholderImage, getCgStatsMap, getTokenByAddress, getTokenLogoUrl } from '@/lib/tokenService';
-import { formatUSD, low, isAddress } from '@/lib/config';
+import { formatUSD, low, isAddress, type OnChainPrice } from '@/lib/config';
 import { useChain } from '@/lib/chainContext';
 import { useTokenSelection } from '@/lib/tokenSelectionContext';
 import { useTypewriter } from '@/hooks/useTypewriter';
+import { subscribeToPrice, connectPriceService } from '@/lib/priceService';
 
 interface ExtendedToken extends Token {
   chainId?: number;
@@ -25,6 +26,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const unsubscribersRef = useRef<Map<string, () => void>>(new Map());
   
   const placeholderTexts = chain === 'BRG' 
     ? ['Search ETH & POL...', 'Search contract address...']
@@ -170,30 +172,43 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
   useEffect(() => {
     if (!showSuggestions || suggestions.length === 0) return;
 
-    const updatePrices = () => {
-      setSuggestions((prev) =>
-        prev.map((item) => {
-          const tokenChainId = (item.token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
-          const cgStats = getCgStatsMap(tokenChainId);
-          const stats = cgStats.get(low(item.token.symbol)) || cgStats.get(low(item.token.name)) || item.stats;
-          return {
-            ...item,
-            token: {
-              ...item.token,
-              currentPrice: stats?.price ?? item.token.currentPrice,
-              priceChange24h: stats?.change ?? item.token.priceChange24h,
-            },
-            stats,
-            price: stats?.price ?? item.price,
-          };
-        })
-      );
-    };
+    // Connect to WebSocket and subscribe to prices
+    connectPriceService();
+    
+    // Subscribe to prices for all suggestions
+    unsubscribersRef.current.forEach(unsub => unsub());
+    unsubscribersRef.current.clear();
 
-    // Update prices immediately when showing suggestions or chain changes
-    updatePrices();
-    const priceInterval = setInterval(updatePrices, 5000);
-    return () => clearInterval(priceInterval);
+    suggestions.forEach(({ token }) => {
+      const tokenChainId = (token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
+      const subKey = `${tokenChainId}-${token.address.toLowerCase()}`;
+      
+      const unsubscribe = subscribeToPrice(token.address, tokenChainId, (priceData: OnChainPrice) => {
+        setSuggestions((prev) =>
+          prev.map((item) => {
+            if (item.token.address.toLowerCase() === token.address.toLowerCase() && 
+                (item.token as ExtendedToken).chainId === tokenChainId) {
+              return {
+                ...item,
+                token: {
+                  ...item.token,
+                  currentPrice: priceData.price,
+                },
+                price: priceData.price,
+              };
+            }
+            return item;
+          })
+        );
+      });
+      
+      unsubscribersRef.current.set(subKey, unsubscribe);
+    });
+
+    return () => {
+      unsubscribersRef.current.forEach(unsub => unsub());
+      unsubscribersRef.current.clear();
+    };
   }, [showSuggestions, suggestions.length, chain]);
 
   useEffect(() => {

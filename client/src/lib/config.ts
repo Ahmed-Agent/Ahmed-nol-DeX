@@ -5,6 +5,13 @@
 let serverConfigCache: ServerConfig | null = null;
 let serverConfigPromise: Promise<ServerConfig> | null = null;
 
+export interface OnChainPrice {
+  price: number;
+  mc: number;
+  volume: number;
+  timestamp: number;
+}
+
 interface ServerConfig {
   chainId: number;
   chainIdHex: string;

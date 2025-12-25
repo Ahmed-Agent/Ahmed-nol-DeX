@@ -24,8 +24,13 @@ interface OnChainPrice {
 const onChainCache = new Map<string, OnChainPrice>();
 const CACHE_TTL = 20000; // 20 seconds
 
-// Subscription management for 90% RPC reduction
-const activeSubscriptions = new Map<string, Set<WebSocket>>();
+// Subscription management for 90% RPC reduction with 5-minute auto-unsubscribe
+interface SubscriptionInfo {
+  clients: Set<WebSocket>;
+  lastSeen: number; // timestamp of last activity
+}
+const activeSubscriptions = new Map<string, SubscriptionInfo>();
+const SUBSCRIPTION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
 // Chain-specific configuration for DEX pools
 const CHAIN_CONFIG: Record<number, {
@@ -430,20 +435,33 @@ export async function registerRoutes(
           const { address, chainId } = data;
           const subKey = `${chainId}-${address.toLowerCase()}`;
           
+          // Unsubscribe from previous token
           if (currentToken && activeSubscriptions.has(currentToken)) {
-            activeSubscriptions.get(currentToken)?.delete(ws);
+            activeSubscriptions.get(currentToken)?.clients.delete(ws);
           }
 
           currentToken = subKey;
-          if (!activeSubscriptions.has(subKey)) {
-            activeSubscriptions.set(subKey, new Set());
-          }
-          activeSubscriptions.get(subKey)?.add(ws);
           
+          // Create or update subscription with fresh timestamp
+          if (!activeSubscriptions.has(subKey)) {
+            activeSubscriptions.set(subKey, { clients: new Set(), lastSeen: Date.now() });
+          }
+          const subInfo = activeSubscriptions.get(subKey)!;
+          subInfo.clients.add(ws);
+          subInfo.lastSeen = Date.now(); // Track last activity
+          
+          // Send immediate price
           const stats = await getOnChainPrice(address, chainId);
           if (stats && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'price', data: stats, address, chainId }));
           }
+        } else if (data.type === 'unsubscribe') {
+          const { address, chainId } = data;
+          const subKey = `${chainId}-${address.toLowerCase()}`;
+          if (activeSubscriptions.has(subKey)) {
+            activeSubscriptions.get(subKey)?.clients.delete(ws);
+          }
+          if (currentToken === subKey) currentToken = null;
         }
       } catch (e) {
         console.error("WS message error:", e);
@@ -451,22 +469,24 @@ export async function registerRoutes(
     });
 
     ws.on('close', () => {
+      // Clean up subscriptions
       if (currentToken && activeSubscriptions.has(currentToken)) {
-        activeSubscriptions.get(currentToken)?.delete(ws);
+        activeSubscriptions.get(currentToken)?.clients.delete(ws);
       }
     });
   });
 
+  // Broadcast prices every 8 seconds
   setInterval(async () => {
-    for (const [subKey, clients] of activeSubscriptions.entries()) {
-      if (clients.size === 0) continue;
+    for (const [subKey, subInfo] of activeSubscriptions.entries()) {
+      if (subInfo.clients.size === 0) continue;
       
       const [chainId, address] = subKey.split('-');
       const stats = await getOnChainPrice(address, Number(chainId));
       
       if (stats) {
         const payload = JSON.stringify({ type: 'price', data: stats, address, chainId });
-        clients.forEach(client => {
+        subInfo.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
             client.send(payload);
           }
@@ -474,6 +494,23 @@ export async function registerRoutes(
       }
     }
   }, 8000);
+
+  // Clean up inactive subscriptions every minute (5-minute timeout)
+  setInterval(() => {
+    const now = Date.now();
+    const toDelete: string[] = [];
+    
+    for (const [subKey, subInfo] of activeSubscriptions.entries()) {
+      if (subInfo.clients.size === 0 || now - subInfo.lastSeen > SUBSCRIPTION_TIMEOUT) {
+        toDelete.push(subKey);
+      }
+    }
+    
+    toDelete.forEach(subKey => {
+      activeSubscriptions.delete(subKey);
+      console.log(`Auto-unsubscribed inactive: ${subKey}`);
+    });
+  }, 60000);
 
   // GET /api/prices/onchain - Professional on-chain price fetcher
   app.get("/api/prices/onchain", async (req, res) => {
