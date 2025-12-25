@@ -28,9 +28,19 @@ async function fetchTokens(chainId: number, platform: string, limit: number) {
     }
     
     const mapped = allTokens.map((coin: any) => {
-      // Use "ethereum" for ETH and "polygon-pos" for Polygon
-      const address = coin.platforms?.[platform];
-      if (!address) return null;
+      // Try multiple platform keys for compatibility
+      let address = null;
+      
+      // Standard CoinGecko platform names
+      if (platform === "ethereum") {
+        address = coin.platforms?.["ethereum"] || coin.platforms?.["ethereum-mainnet"];
+      } else if (platform === "polygon-pos" || platform === "polygon") {
+        address = coin.platforms?.["polygon-pos"] || coin.platforms?.["matic"] || coin.platforms?.["polygon"];
+      } else {
+        address = coin.platforms?.[platform];
+      }
+      
+      if (!address || address === "") return null;
       
       return {
         address: address.toLowerCase(),

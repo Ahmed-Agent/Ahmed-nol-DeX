@@ -679,13 +679,45 @@ export async function registerRoutes(
     // Return cache hit even if price is 0 (means pool not found, but cache prevents hammering RPC)
     const cacheKey = `${chainId}-${String(address).toLowerCase()}`;
     const cached = onChainCache.get(cacheKey);
-    if (cached) {
+    if (cached && cached.price > 0) {
       return res.json(cached);
     }
     
-    if (!stats) return res.status(503).json({ error: "Failed to fetch on-chain data" });
+    if (!stats || stats.price === 0) {
+      // Don't return error, just empty price - let frontend try fallback
+      return res.json({ price: 0, mc: 0, volume: 0, timestamp: Date.now() });
+    }
     
     res.json(stats);
+  });
+
+  // GET /api/price-fallback - CoinGecko fallback price fetcher
+  app.get("/api/price-fallback", rateLimitMiddleware, async (req, res) => {
+    const { address, chain } = req.query;
+    if (!address || !chain) return res.status(400).json({ error: "Missing address or chain" });
+    
+    try {
+      const cgKey = getCoingeckoApiKey();
+      const authParam = cgKey ? `&x_cg_demo_api_key=${cgKey}` : "";
+      const url = `https://api.coingecko.com/api/v3/simple/token_price/${chain}?contract_addresses=${address}&vs_currencies=usd${authParam}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        return res.status(404).json({ error: "Token not found" });
+      }
+      
+      const data = await response.json();
+      const price = data[String(address).toLowerCase()]?.usd;
+      
+      if (price) {
+        return res.json({ price, mc: 0, volume: 0, timestamp: Date.now() });
+      }
+      
+      res.status(404).json({ error: "No price found" });
+    } catch (e) {
+      console.error("Price fallback error:", e);
+      res.status(503).json({ error: "Failed to fetch price" });
+    }
   });
 
   // GET /api/tokens/:filename - Serves token list
