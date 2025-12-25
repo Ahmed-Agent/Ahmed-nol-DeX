@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode, useEffect, useRef } from 'react';
-import { Token, getTokenList } from './tokenService';
+import { Token, getTokenList, loadTokensAndMarkets } from './tokenService';
 import { useChain } from './chainContext';
 
 interface TokenSelectionContextValue {
@@ -16,17 +16,26 @@ const TokenSelectionContext = createContext<TokenSelectionContextValue | null>(n
 export function TokenSelectionProvider({ children }: { children: ReactNode }) {
   const { chainId, chain } = useChain();
   const previousChainRef = useRef<string | null>(null);
+  const [tokensLoaded, setTokensLoaded] = useState(false);
 
   const [selectedFromToken, setSelectedFromToken] = useState<Token | null>(null);
   const [selectedToToken, setSelectedToToken] = useState<Token | null>(null);
   const [selectionVersion, setSelectionVersion] = useState(0);
 
+  useEffect(() => {
+    loadTokensAndMarkets().then(() => {
+      setTokensLoaded(true);
+      console.log('[TokenSelection] Global tokens loaded');
+    });
+  }, []);
+
   const getDefaultTokens = useCallback((cid: number) => {
     const list = getTokenList(cid);
-    if (!list || list.length === 0) return { from: null, to: null };
+    if (!list || list.length === 0) {
+      return { from: null, to: null };
+    }
     
     let from: Token | null = null;
-    
     if (cid === 137) {
       from = list.find(t => t.address.toLowerCase() === '0x0000000000000000000000000000000000001010') || list[0];
     } else if (cid === 1) {
@@ -44,16 +53,21 @@ export function TokenSelectionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!tokensLoaded) return;
     if (chain === 'BRG') {
       previousChainRef.current = 'BRG';
       return;
     }
 
     const { from, to } = getDefaultTokens(chainId);
-    setSelectedFromToken(from);
-    setSelectedToToken(to);
+    if (from && to) {
+      setSelectedFromToken(from);
+      setSelectedToToken(to);
+      setSelectionVersion(v => v + 1);
+      console.log(`[TokenSelection] Applied defaults for ${chain}:`, from.symbol, '->', to.symbol);
+    }
     previousChainRef.current = chain;
-  }, [chainId, chain, getDefaultTokens]);
+  }, [chainId, chain, tokensLoaded, getDefaultTokens]);
 
   const selectFromToken = useCallback((token: Token) => {
     setSelectedFromToken(token);

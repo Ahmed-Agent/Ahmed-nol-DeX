@@ -34,6 +34,7 @@ async function fetchCG(platform: string) {
   const baseUrl = 'https://api.coingecko.com/api/v3';
   const headers = COINGECKO_API_KEY ? { 'x-cg-demo-api-key': COINGECKO_API_KEY } : {};
   try {
+    console.log(`Fetching top tokens for ${platform} from CoinGecko...`);
     const marketsUrl = `${baseUrl}/coins/markets?vs_currency=usd&category=${platform}-ecosystem&order=market_cap_desc&per_page=250&page=1`;
     const mRes = await fetch(marketsUrl, { headers });
     if (!mRes.ok) throw new Error(`CG markets failed: ${mRes.status}`);
