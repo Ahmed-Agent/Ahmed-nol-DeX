@@ -20,10 +20,13 @@ async function fetchCMC(chainId: number) {
       }
     });
 
-    const cmcChainName = chainId === 1 ? 'Ethereum' : 'Polygon';
+    // CMC uses 'platform' to specify the blockchain. 
+    // We need to find tokens where platform.id or platform.name matches.
+    // Ethereum platform ID is 1, Polygon is 137 in CMC.
+    const platformId = chainId === 1 ? 1 : 137;
     
     return response.data.data
-      .filter((c: any) => c.platform?.name === cmcChainName && c.platform?.token_address)
+      .filter((c: any) => c.platform?.id === platformId && c.platform?.token_address)
       .map((c: any) => ({
         address: c.platform.token_address.toLowerCase(),
         symbol: c.symbol.toUpperCase(),
@@ -88,38 +91,34 @@ export async function updateTokenLists() {
     const combined = [...list1, ...list2];
     const seen = new Set();
     
-    // Ensure native tokens and USDC are always present if not found
-    const result = combined.filter(t => {
+    return combined.filter(t => {
       if (!t.address || seen.has(t.address)) return false;
       seen.add(t.address);
       return true;
     }).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 250);
-
-    return result;
   };
 
   const ethereum = dedupe(ethCMC, ethCG);
   const polygon = dedupe(polCMC, polCG);
 
-  // Fallback to ensure we have at least defaults if API fails
-  if (ethereum.length === 0) {
-    ethereum.push({
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "ETH",
-      name: "Ethereum",
-      decimals: 18,
-      logoURI: "https://assets.coingecko.com/coins/images/279/large/ethereum.png"
-    });
-  }
-  if (polygon.length === 0) {
-    polygon.push({
-      address: "0x0000000000000000000000000000000000001010",
-      symbol: "MATIC",
-      name: "Polygon",
-      decimals: 18,
-      logoURI: "https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png"
-    });
-  }
+  // Core defaults as backup
+  const ethDefault = {
+    address: "0x0000000000000000000000000000000000000000",
+    symbol: "ETH",
+    name: "Ethereum",
+    decimals: 18,
+    logoURI: "https://assets.coingecko.com/coins/images/279/large/ethereum.png"
+  };
+  const polDefault = {
+    address: "0x0000000000000000000000000000000000001010",
+    symbol: "MATIC",
+    name: "Polygon",
+    decimals: 18,
+    logoURI: "https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png"
+  };
+
+  if (!ethereum.find(t => t.address === ethDefault.address)) ethereum.unshift(ethDefault);
+  if (!polygon.find(t => t.address === polDefault.address)) polygon.unshift(polDefault);
 
   const tokensData = { ethereum, polygon };
   

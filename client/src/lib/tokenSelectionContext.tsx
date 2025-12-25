@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode, useEffect } from 'react';
-import { Token } from './tokenService';
+import { Token, getTokenList } from './tokenService';
 import { useChain } from './chainContext';
-import { DEFAULT_TOKENS } from './config';
 
 interface TokenSelectionContextValue {
   selectedFromToken: Token | null;
@@ -14,23 +13,33 @@ interface TokenSelectionContextValue {
 
 const TokenSelectionContext = createContext<TokenSelectionContextValue | null>(null);
 
-const typedDefaultTokens: Record<number, { from: any; to: any }> = DEFAULT_TOKENS as any;
-
 export function TokenSelectionProvider({ children }: { children: ReactNode }) {
   const { chainId } = useChain();
-  const defaults = typedDefaultTokens[chainId] || typedDefaultTokens[137];
   
-  const [selectedFromToken, setSelectedFromToken] = useState<Token | null>(defaults?.from || null);
-  const [selectedToToken, setSelectedToToken] = useState<Token | null>(defaults?.to || null);
+  const getRandomTokens = useCallback((cid: number) => {
+    const list = getTokenList(cid);
+    if (list.length < 2) return { from: null, to: null };
+    
+    // Pick two distinct random tokens
+    const fromIdx = Math.floor(Math.random() * list.length);
+    let toIdx = Math.floor(Math.random() * list.length);
+    while (toIdx === fromIdx) {
+      toIdx = Math.floor(Math.random() * list.length);
+    }
+    
+    return { from: list[fromIdx], to: list[toIdx] };
+  }, []);
+
+  const [selectedFromToken, setSelectedFromToken] = useState<Token | null>(null);
+  const [selectedToToken, setSelectedToToken] = useState<Token | null>(null);
   const [selectionVersion, setSelectionVersion] = useState(0);
 
+  // Initialize and update when chain changes
   useEffect(() => {
-    const newDefaults = typedDefaultTokens[chainId] || typedDefaultTokens[137];
-    if (newDefaults) {
-      setSelectedFromToken(newDefaults.from);
-      setSelectedToToken(newDefaults.to);
-    }
-  }, [chainId]);
+    const { from, to } = getRandomTokens(chainId);
+    setSelectedFromToken(from);
+    setSelectedToToken(to);
+  }, [chainId, getRandomTokens]);
 
   const selectFromToken = useCallback((token: Token) => {
     setSelectedFromToken(token);
