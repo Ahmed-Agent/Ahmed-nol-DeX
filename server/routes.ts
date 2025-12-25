@@ -6,6 +6,8 @@ import path from "path";
 import { ethers } from "ethers";
 import { WebSocketServer, WebSocket } from "ws";
 
+import { updateTokenLists } from "./tokenUpdater";
+
 // ABI for ERC20 decimals and Uniswap V2 Pair
 const ERC20_ABI = ["function decimals() view returns (uint8)", "function symbol() view returns (string)"];
 const PAIR_ABI = [
@@ -183,6 +185,20 @@ async function getOnChainPrice(address: string, chainId: number): Promise<OnChai
     };
 
     onChainCache.set(cacheKey, result);
+    
+    // Clean old cache entries periodically (every request when size > 5000)
+    if (onChainCache.size > 5000) {
+      const now = Date.now();
+      const entriesToDelete: string[] = [];
+      for (const cacheKeyEntry of Array.from(onChainCache.keys())) {
+        const value = onChainCache.get(cacheKeyEntry);
+        if (value && now - value.timestamp > CACHE_TTL * 2) {
+          entriesToDelete.push(cacheKeyEntry);
+        }
+      }
+      entriesToDelete.forEach(key => onChainCache.delete(key));
+    }
+
     return result;
   } catch (e) {
     console.error(`On-chain fetch error for ${tokenAddr} on chain ${chainId}:`, e);
@@ -290,12 +306,15 @@ function recordChatMessage(ip: string): void {
 setInterval(() => {
   const now = Date.now();
   const entriesToDelete: string[] = [];
-  for (const [ip, entry] of chatRateLimits.entries()) {
-    const hourStart = now - CHAT_HOUR_MS;
-    entry.messageTimes = entry.messageTimes.filter(time => time > hourStart);
-    // Remove entries with no messages in the last hour
-    if (entry.messageTimes.length === 0) {
-      entriesToDelete.push(ip);
+  for (const ip of Array.from(chatRateLimits.keys())) {
+    const entry = chatRateLimits.get(ip);
+    if (entry) {
+      const hourStart = now - CHAT_HOUR_MS;
+      entry.messageTimes = entry.messageTimes.filter(time => time > hourStart);
+      // Remove entries with no messages in the last hour
+      if (entry.messageTimes.length === 0) {
+        entriesToDelete.push(ip);
+      }
     }
   }
   entriesToDelete.forEach(ip => chatRateLimits.delete(ip));
@@ -322,8 +341,9 @@ function checkRateLimit(ip: string): boolean {
 setInterval(() => {
   const now = Date.now();
   const entriesToDelete: string[] = [];
-  for (const [ip, entry] of rateLimits.entries()) {
-    if (now > entry.resetTime) {
+  for (const ip of Array.from(rateLimits.keys())) {
+    const entry = rateLimits.get(ip);
+    if (entry && now > entry.resetTime) {
       entriesToDelete.push(ip);
     }
   }
@@ -410,8 +430,13 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+  // Update token lists on startup (fetches 450 per chain)
+  updateTokenLists().catch(console.error);
+
   const wss = new WebSocketServer({ server: httpServer, path: '/api/ws/prices' });
+
+  // Single-flight locks for price fetching to ensure scalability
+  const priceFetchingLocks = new Set<string>();
 
   wss.on('connection', (ws) => {
     let currentToken: string | null = null;
@@ -464,12 +489,13 @@ export async function registerRoutes(
     });
   });
 
-  // Broadcast prices every 8 seconds
+      // Broadcast prices every 8 seconds
   setInterval(async () => {
     // Collect unique tokens to fetch to optimize RPC calls
     const tokensToFetch = new Map<string, { address: string; chainId: number }>();
     
-    for (const subKey of activeSubscriptions.keys()) {
+    const subKeys = Array.from(activeSubscriptions.keys());
+    for (const subKey of subKeys) {
       const subInfo = activeSubscriptions.get(subKey);
       if (!subInfo || subInfo.clients.size === 0) continue;
       
@@ -478,19 +504,28 @@ export async function registerRoutes(
     }
 
     // Professional Algo: Single-flight execution for all active tokens
+    // Fetches 450 per chain in 10s intervals total (roughly 1.5s per batch if many)
     await Promise.all(Array.from(tokensToFetch.values()).map(async ({ address, chainId }) => {
-      const stats = await getOnChainPrice(address, chainId);
-      if (stats) {
-        const subKey = `${chainId}-${address.toLowerCase()}`;
-        const subInfo = activeSubscriptions.get(subKey);
-        if (subInfo) {
-          const payload = JSON.stringify({ type: 'price', data: stats, address, chainId });
-          subInfo.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(payload);
-            }
-          });
+      // Single-flight lock: avoid parallel requests for same token
+      const lockKey = `${chainId}-${address.toLowerCase()}`;
+      if (priceFetchingLocks.has(lockKey)) return;
+      priceFetchingLocks.add(lockKey);
+      
+      try {
+        const stats = await getOnChainPrice(address, chainId);
+        if (stats) {
+          const subInfo = activeSubscriptions.get(lockKey);
+          if (subInfo) {
+            const payload = JSON.stringify({ type: 'price', data: stats, address, chainId });
+            subInfo.clients.forEach(client => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(payload);
+              }
+            });
+          }
         }
+      } finally {
+        priceFetchingLocks.delete(lockKey);
       }
     }));
   }, 8000);
@@ -500,8 +535,9 @@ export async function registerRoutes(
     const now = Date.now();
     const toDelete: string[] = [];
     
-    for (const [subKey, subInfo] of activeSubscriptions.entries()) {
-      if (subInfo.clients.size === 0 || now - subInfo.lastSeen > SUBSCRIPTION_TIMEOUT) {
+    for (const subKey of Array.from(activeSubscriptions.keys())) {
+      const subInfo = activeSubscriptions.get(subKey);
+      if (!subInfo || (subInfo.clients.size === 0 && now - subInfo.lastSeen > SUBSCRIPTION_TIMEOUT)) {
         toDelete.push(subKey);
       }
     }
