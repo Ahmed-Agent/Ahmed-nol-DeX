@@ -225,13 +225,13 @@ export function getPlaceholderImage(): string {
 }
 
 
-// On-chain price fetching with CoinGecko fallback
+// On-chain price fetching ONLY - no external fallback
 export async function getTokenPriceUSD(address: string, decimals = 18, chainId?: number): Promise<number | null> {
   if (!address) return null;
   const addr = low(address);
   const validChainId = (chainId === 1 || chainId === 137) ? chainId : config.chainId;
   
-  // Try on-chain price endpoint first
+  // Fetch on-chain price from server cache (20-second TTL)
   try {
     const res = await fetch(`/api/prices/onchain?address=${addr}&chainId=${validChainId}`);
     if (res.ok) {
@@ -244,18 +244,7 @@ export async function getTokenPriceUSD(address: string, decimals = 18, chainId?:
     console.error('On-chain price fetch error:', e);
   }
   
-  // Fallback to CoinGecko via server endpoint
-  try {
-    const cgChain = validChainId === 1 ? 'ethereum' : 'polygon-pos';
-    const res = await fetch(`/api/price-fallback?address=${addr}&chain=${cgChain}`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.price || null;
-    }
-  } catch (e) {
-    console.error('CoinGecko fallback error:', e);
-  }
-  
+  // No fallback - return null if on-chain fetch fails
   return null;
 }
 
