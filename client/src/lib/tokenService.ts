@@ -32,29 +32,7 @@ const WS_PRICE_URL = typeof window !== 'undefined'
   ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws/prices`
   : '';
 
-let priceWs: WebSocket | null = null;
-const priceCallbacks = new Map<string, (data: any) => void>();
-
-export function subscribeToPrice(address: string, chainId: number, callback: (data: any) => void) {
-  const subKey = `${chainId}-${address.toLowerCase()}`;
-  priceCallbacks.set(subKey, callback);
-
-  if (!priceWs || priceWs.readyState !== WebSocket.OPEN) {
-    priceWs = new WebSocket(WS_PRICE_URL);
-    priceWs.onopen = () => {
-      priceWs?.send(JSON.stringify({ type: 'subscribe', address, chainId }));
-    };
-    priceWs.onmessage = (event) => {
-      const { type, data, address, chainId } = JSON.parse(event.data);
-      if (type === 'price') {
-        const key = `${chainId}-${address.toLowerCase()}`;
-        priceCallbacks.get(key)?.(data);
-      }
-    };
-  } else {
-    priceWs.send(JSON.stringify({ type: 'subscribe', address, chainId }));
-  }
-}
+// REMOVED: Price WebSocket handling moved to priceService.ts
 
 const DARK_SVG_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhlaWdodD0iMjgiIHZpZXdCb3g9IjAgMCAyOCAyOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNCIgY3k9IjE0IiByPSIxNCIgZmlsbD0iIzJBMkEzQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjODg4IiBmb250LXNpemU9IjEyIj4/PC90ZXh0Pjwvc3ZnPg==';
 
@@ -236,6 +214,11 @@ export function getStatsByTokenAddress(address: string, chainId?: number): Token
   return statsMapByAddress?.get(addr) || null;
 }
 
+// Get stats map for a chain (used by TokenSearchBar)
+export function getCgStatsMap(chainId: number): Map<string, TokenStats> {
+  return statsMapByAddressChain.get(chainId) || new Map();
+}
+
 
 export function getPlaceholderImage(): string {
   return DARK_SVG_PLACEHOLDER;
@@ -335,97 +318,9 @@ export async function getTokenByAddress(address: string, chainId?: number): Prom
   const cid = chainId ?? config.chainId;
   const addr = low(address);
   
-  // First check local token map (self-hosted)
+  // Check local token map ONLY (no external API fallback)
   const tokenMap = getTokenMap(cid);
-  if (tokenMap.has(addr)) {
-    return tokenMap.get(addr) || null;
-  }
-  
-  // Try to fetch from multiple sources - FULL external API access for contract address search
-  const sources = [
-    // CoinGecko
-    async () => {
-      const network = chainIdToCoingeckoNetwork[cid] || 'polygon-pos';
-      const url = `https://api.coingecko.com/api/v3/coins/${network}/contract/${addr}`;
-      const headers: Record<string, string> = {};
-      if (config.coingeckoApiKey) {
-        headers['x-cg-pro-api-key'] = config.coingeckoApiKey;
-      }
-      const res = await fetchWithTimeout(url, { headers }, 5000);
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data && data.symbol) {
-        return {
-          address: addr,
-          symbol: data.symbol?.toUpperCase() || '',
-          name: data.name || '',
-          decimals: data.detail_platforms?.[network]?.decimal_place || 18,
-          logoURI: data.image?.small || data.image?.thumb || '',
-        };
-      }
-      return null;
-    },
-    // GeckoTerminal
-    async () => {
-      const networkMap: Record<number, string> = { 1: 'eth', 137: 'polygon_pos' };
-      const network = networkMap[cid] || 'polygon_pos';
-      const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${addr}`;
-      const res = await fetchWithTimeout(url, {}, 5000);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const attrs = data?.data?.attributes;
-      if (attrs && attrs.symbol) {
-        return {
-          address: addr,
-          symbol: attrs.symbol?.toUpperCase() || '',
-          name: attrs.name || '',
-          decimals: attrs.decimals || 18,
-          logoURI: attrs.image_url || '',
-        };
-      }
-      return null;
-    },
-    // DexScreener
-    async () => {
-      const url = `https://api.dexscreener.com/latest/dex/tokens/${addr}`;
-      const res = await fetchWithTimeout(url, {}, 5000);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const pairs = data?.pairs || [];
-      const chainFilter = cid === 1 ? 'ethereum' : 'polygon';
-      const pair = pairs.find((p: any) => p.chainId === chainFilter);
-      if (pair) {
-        const baseToken = pair.baseToken?.address?.toLowerCase() === addr ? pair.baseToken : pair.quoteToken;
-        if (baseToken) {
-          return {
-            address: addr,
-            symbol: baseToken.symbol || '',
-            name: baseToken.name || '',
-            decimals: 18,
-            logoURI: '',
-          };
-        }
-      }
-      return null;
-    },
-  ];
-  
-  for (const source of sources) {
-    try {
-      const token = await source();
-      if (token) {
-        // Add to address map for lookups, but DO NOT add to main tokenList
-        // This keeps empty search results showing only self-hosted tokens
-        tokenMap.set(addr, token);
-        tokenMapByChain.set(cid, tokenMap);
-        return token;
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-  
-  return null;
+  return tokenMap.get(addr) || null;
 }
 
 export function getTokenLogoUrl(token: Token, chainId?: number): string {
@@ -434,7 +329,7 @@ export function getTokenLogoUrl(token: Token, chainId?: number): string {
   const cid = chainId ?? config.chainId;
   const addr = low(token.address);
   
-  // Multiple fallback sources for token logos
+  // Icon fallbacks (KEPT: only image assets, not price data)
   const logoSources = [
     `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${addr}/logo.png`,
     `https://assets.coingecko.com/coins/images/1/small/${token.symbol?.toLowerCase()}.png`,
@@ -449,31 +344,5 @@ export async function refreshMarketData(chainId?: number): Promise<void> {
   console.log(`Market data for chain ${chainId} updated via WebSocket`);
 }
 
-// Fetch real 1-hour price data (12 points at 5-minute intervals)
-// This provides the last hour of price movement for accurate sparkline visualization
-export async function getHistoricalPriceData(token: Token, chainId: number): Promise<number[]> {
-  try {
-    const cgNetwork = chainIdToCoingeckoNetwork[chainId] || 'polygon-pos';
-    // Fetch 7 days of data to have enough granular points for 1-hour window
-    const url = `/api/prices/coingecko/coins/${cgNetwork}/contract/${token.address}/market_chart?vs_currency=usd&days=7`;
-    const response = await fetchWithTimeout(url, {}, 5000);
-    
-    if (!response.ok) return [];
-    
-    const data = await response.json() as any;
-    const prices = data?.prices || [];
-    
-    if (prices.length === 0) return [];
-    
-    // Get last 12 data points (1 hour at ~5-minute intervals)
-    // CoinGecko provides data at varying intervals; we take the last 12 points for ~1 hour coverage
-    const recentPrices = prices.slice(-12).map((p: any) => typeof p[1] === 'number' ? p[1] : 0).filter(p => p > 0);
-    
-    console.log(`[PriceHistory] Fetched ${recentPrices.length} price points for ${token.symbol} on chain ${chainId}`);
-    return recentPrices;
-  } catch (e) {
-    console.warn('Failed to fetch historical price data:', e);
-    return [];
-  }
-}
+// REMOVED: Historical price data fetch (use on-chain only)
 
