@@ -1,7 +1,82 @@
 [
-  {"address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "name": "USD Coin", "symbol": "USDC", "decimals": 6, "chainId": 137, "logoURI": "https://assets.coingecko.com/coins/images/6319/thumb/usdc.png"},
-  {"address": "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", "name": "Tether USD", "symbol": "USDT", "decimals": 6, "chainId": 137, "logoURI": "https://assets.coingecko.com/coins/images/325/thumb/Tether.png"},
-  {"address": "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270", "name": "Wrapped Matic", "symbol": "WMATIC", "decimals": 18, "chainId": 137, "logoURI": "https://assets.coingecko.com/coins/images/14073/thumb/matic.png"},
-  {"address": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", "name": "Wrapped Ether", "symbol": "WETH", "decimals": 18, "chainId": 137, "logoURI": "https://assets.coingecko.com/coins/images/2518/thumb/weth.png"},
-  {"address": "0x1bfd67037b42cf73acf2047067bd4303cbd5e1925", "name": "Wrapped Bitcoin", "symbol": "WBTC", "decimals": 8, "chainId": 137, "logoURI": "https://assets.coingecko.com/coins/images/7598/thumb/wrapped_bitcoin_wbtc.png"}
+  {
+    "address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+    "name": "USD Coin",
+    "symbol": "USDC",
+    "decimals": 6,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/6319/thumb/usdc.png"
+  },
+  {
+    "address": "0xc2132d05d31c914a87c6611c10748aeb04b58e8f",
+    "name": "Tether USD",
+    "symbol": "USDT",
+    "decimals": 6,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/325/thumb/Tether.png"
+  },
+  {
+    "address": "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270",
+    "name": "Wrapped Matic",
+    "symbol": "WMATIC",
+    "decimals": 18,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/14073/thumb/matic.png"
+  },
+  {
+    "address": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
+    "name": "Wrapped Ether",
+    "symbol": "WETH",
+    "decimals": 18,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/2518/thumb/weth.png"
+  },
+  {
+    "address": "0x1bfd67037b42cf73acf2047067bd4303cbd5e1925",
+    "name": "Wrapped Bitcoin",
+    "symbol": "WBTC",
+    "decimals": 8,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/7598/thumb/wrapped_bitcoin_wbtc.png"
+  },
+  {
+    "address": "0xdab529f40e671a1d4bf91361c21bf9f0c393bc7f",
+    "name": "Dai Stablecoin",
+    "symbol": "DAI",
+    "decimals": 18,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/9956/thumb/dai-multi-collateral-mcd.png"
+  },
+  {
+    "address": "0x0000000000000000000000000000000000001010",
+    "name": "Polygon",
+    "symbol": "MATIC",
+    "decimals": 18,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/4713/thumb/matic.png"
+  },
+  {
+    "address": "0x3c499c542cEF5E3811e1192ce578500DFA7d3e34",
+    "name": "USD Coin",
+    "symbol": "USDC.e",
+    "decimals": 6,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/6319/thumb/usdc.png"
+  },
+  {
+    "address": "0x1d871e8f0B7c4ec4d5b9717f58Ef0E6D3FBfB14",
+    "name": "GGC Token",
+    "symbol": "GGC",
+    "decimals": 18,
+    "chainId": 137,
+    "logoURI": ""
+  },
+  {
+    "address": "0xe0b52e49357fd4daf2c15e02058dce6bc0057db4",
+    "name": "AAVEV2 Polygon",
+    "symbol": "AAVE",
+    "decimals": 18,
+    "chainId": 137,
+    "logoURI": "https://assets.coingecko.com/coins/images/12645/thumb/AAVE.png"
+  }
 ]
