@@ -334,6 +334,37 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         contract.decimals()
       ]);
       
+      // Check if token already exists in tokens.json
+      const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
+      const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
+      const chainKey = cid === 1 ? 'ethereum' : 'polygon';
+      const tokensList = tokensData[chainKey] || [];
+      
+      const existingToken = tokensList.find((t: any) => t.address.toLowerCase() === addr);
+      
+      if (!existingToken) {
+        // Token doesn't exist, add it permanently
+        const newToken = {
+          address: addr,
+          symbol: symbol.toUpperCase(),
+          name: symbol,
+          marketCap: 0,
+          logoURI: "",
+          decimals: Number(decimals)
+        };
+        
+        tokensList.push(newToken);
+        tokensData[chainKey] = tokensList;
+        
+        // Write back to file
+        fs.writeFileSync(tokensPath, JSON.stringify(tokensData, null, 2));
+        
+        // Add to watched tokens for analytics refresh
+        watchedTokens.add(`${cid}-${addr}`);
+        
+        console.log(`[TokenSearch] Added new token to tokens.json: ${symbol} (${addr}) on chain ${cid}`);
+      }
+      
       res.json({ address: addr, symbol, decimals, name: symbol });
     } catch (e) {
       res.status(404).send("Token not found on-chain");
@@ -359,18 +390,38 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
     
     const promise = (async () => {
-      const fallbackUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${addr}/logo.png`;
+      // Try Trust Wallet first
+      const trustWalletUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${addr}/logo.png`;
       try {
-        const response = await fetch(fallbackUrl, { method: 'HEAD', timeout: 3000 });
+        const response = await fetch(trustWalletUrl, { method: 'HEAD', timeout: 3000 });
         if (response.ok) {
-          iconCache.set(cacheKey, { url: fallbackUrl, expires: Date.now() + ICON_CACHE_TTL });
-          return fallbackUrl;
+          iconCache.set(cacheKey, { url: trustWalletUrl, expires: Date.now() + ICON_CACHE_TTL });
+          return trustWalletUrl;
         }
-      } catch (e) {}
+      } catch (e) {
+        console.debug(`[Icon] Trust Wallet failed for ${addr}: ${e}`);
+      }
       
-      const coingeckoUrl = `https://coin-images.coingecko.com/coins/images/`;
-      iconCache.set(cacheKey, { url: coingeckoUrl, expires: Date.now() + ICON_CACHE_TTL });
-      return coingeckoUrl;
+      // Try to get logoURI from tokens.json
+      try {
+        const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
+        const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
+        const chainKey = cid === 1 ? 'ethereum' : 'polygon';
+        const tokensList = tokensData[chainKey] || [];
+        const token = tokensList.find((t: any) => t.address.toLowerCase() === addr);
+        
+        if (token && token.logoURI) {
+          iconCache.set(cacheKey, { url: token.logoURI, expires: Date.now() + ICON_CACHE_TTL });
+          return token.logoURI;
+        }
+      } catch (e) {
+        console.debug(`[Icon] Failed to fetch logoURI from tokens.json: ${e}`);
+      }
+      
+      // Fallback to placeholder
+      const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhlaWdodD0iMjgiIHZpZXdCb3g9IjAgMCAyOCAyOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNCIgY3k9IjE0IiByPSIxNCIgZmlsbD0iIzJBMkEzQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjODg4IiBmb250LXNpemU9IjEyIj4/PC90ZXh0Pjwvc3ZnPg==';
+      iconCache.set(cacheKey, { url: placeholder, expires: Date.now() + ICON_CACHE_TTL });
+      return placeholder;
     })();
     
     iconFetchingInFlight.set(cacheKey, promise);
