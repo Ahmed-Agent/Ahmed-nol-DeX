@@ -29,6 +29,7 @@ interface OnChainPrice {
 
 const onChainCache = new Map<string, OnChainPrice>();
 const CACHE_TTL = 20000; // 20 seconds
+const PRICE_REFRESH_INTERVAL = 25000; // 25 seconds for unconditional server refresh
 const SUBSCRIPTION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
 const activeSubscriptions = new Map<string, { clients: Set<WebSocket>, lastSeen: number }>();
@@ -160,13 +161,14 @@ async function getOnChainAnalytics(address: string, chainId: number): Promise<On
   return await promise;
 }
 
-// Load all tokens from JSON and add to watched set
-function loadTokensForWatching() {
+// Dynamically reload all tokens from current tokens.json
+function reloadAllTokensForWatching() {
   try {
     const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
     const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
+    const prevSize = watchedTokens.size;
     
-    // Add Ethereum tokens
+    // Reload Ethereum tokens
     if (tokensData.ethereum && Array.isArray(tokensData.ethereum)) {
       tokensData.ethereum.forEach((token: any) => {
         if (token.address) {
@@ -175,7 +177,7 @@ function loadTokensForWatching() {
       });
     }
     
-    // Add Polygon tokens
+    // Reload Polygon tokens
     if (tokensData.polygon && Array.isArray(tokensData.polygon)) {
       tokensData.polygon.forEach((token: any) => {
         if (token.address) {
@@ -184,9 +186,11 @@ function loadTokensForWatching() {
       });
     }
     
-    console.log(`[Analytics] Loaded ${watchedTokens.size} tokens for watching`);
+    if (watchedTokens.size !== prevSize) {
+      console.log(`[PriceRefresh] Updated watched tokens: ${prevSize} → ${watchedTokens.size}`);
+    }
   } catch (e) {
-    console.error('[Analytics] Error loading tokens:', e);
+    console.error('[PriceRefresh] Error loading tokens:', e);
   }
 }
 
@@ -213,14 +217,49 @@ async function refreshAllAnalytics() {
   console.log('[Analytics] Refresh complete');
 }
 
-// Start automatic refresh every 1 hour
+// Start unconditional price refresh every 25 seconds for ALL dynamic tokens
+function startUnconditionalPriceRefresh() {
+  // Initial reload
+  reloadAllTokensForWatching();
+  
+  // Unconditionally refresh ALL tokens every 25 seconds
+  setInterval(async () => {
+    reloadAllTokensForWatching();
+    const tokenArray = Array.from(watchedTokens);
+    console.log(`[PriceRefresh] Starting unconditional refresh of ${tokenArray.length} tokens...`);
+    
+    for (const tokenKey of tokenArray) {
+      const [chainIdStr, address] = tokenKey.split('-');
+      const chainId = Number(chainIdStr);
+      
+      // Fetch fresh price unconditionally (ignore cache)
+      const price = await getOnChainPrice(address, chainId);
+      if (!price) continue;
+      
+      // Stream to all subscribed clients for this token
+      const subKey = `${chainId}-${address}`;
+      const subs = activeSubscriptions.get(subKey);
+      if (subs && subs.size > 0) {
+        const msg = JSON.stringify({ type: 'price', data: price, address, chainId });
+        subs.forEach(ws => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+        });
+      }
+    }
+    
+    console.log('[PriceRefresh] Unconditional refresh complete');
+  }, PRICE_REFRESH_INTERVAL);
+}
+
+// Start automatic analytics refresh every 1 hour (separate from prices)
 function startAnalyticsRefreshTimer() {
   // Initial load
-  loadTokensForWatching();
+  reloadAllTokensForWatching();
   refreshAllAnalytics();
   
   // Refresh every 1 hour
   setInterval(() => {
+    reloadAllTokensForWatching();
     refreshAllAnalytics();
   }, ANALYTICS_CACHE_TTL);
 }
@@ -263,6 +302,9 @@ function triggerTokenRefresh() {
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   ensureTokenListExists();
+  
+  // Start unconditional 25-second price refresh for all dynamic tokens
+  startUnconditionalPriceRefresh();
   
   // Start analytics caching and refresh timer
   startAnalyticsRefreshTimer();
@@ -316,20 +358,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
   });
 
+  // Cleanup inactive subscriptions every 1 minute
   setInterval(() => {
     const now = Date.now();
     activeSubscriptions.forEach((sub, key) => {
-      if (now - sub.lastSeen > SUBSCRIPTION_TIMEOUT) { activeSubscriptions.delete(key); return; }
-      if (sub.clients.size === 0) return;
-      const [chainId, address] = key.split('-');
-      fetchPriceAggregated(address, Number(chainId)).then(price => {
-        if (price) {
-          const msg = JSON.stringify({ type: 'price', data: price, address, chainId: Number(chainId) });
-          sub.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg); });
-        }
-      });
+      if (now - sub.lastSeen > SUBSCRIPTION_TIMEOUT) {
+        console.log(`[Subscriptions] Removing inactive subscription: ${key}`);
+        activeSubscriptions.delete(key);
+      }
     });
-  }, 8000);
+  }, 60000);
 
   app.get("/api/prices/onchain", async (req, res) => {
     const { address, chainId } = req.query;
@@ -388,13 +426,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         // Write back to file
         fs.writeFileSync(tokensPath, JSON.stringify(tokensData, null, 2));
         
-        // Add to watched tokens for analytics refresh
+        // Immediately add to watched tokens for price refresh and analytics
         watchedTokens.add(`${cid}-${addr}`);
         
         // Trigger single-flight token refresh to all connected clients
         triggerTokenRefresh();
         
-        console.log(`[TokenSearch] Added new token to tokens.json: ${symbol} (${addr}) on chain ${cid}`);
+        console.log(`[TokenSearch] Added new token: ${symbol} (${addr}) chain ${cid} | Total watched: ${watchedTokens.size}`);
       }
       
       res.json({ address: addr, symbol, decimals, name: symbol });
