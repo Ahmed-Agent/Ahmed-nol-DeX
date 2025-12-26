@@ -240,15 +240,8 @@ export function TokenInput({
   // Fetch icon for selected token using cached /api/icon endpoint
   useEffect(() => {
     if (selectedToken) {
-      const cacheKey = `${chainId}-${selectedToken.address}`;
-      const cached = iconCacheRef.current.get(cacheKey);
-      if (cached) {
-        setSelectedTokenIcon(cached);
-      } else {
-        const url = getTokenLogoUrl(selectedToken, chainId);
-        iconCacheRef.current.set(cacheKey, url);
-        setSelectedTokenIcon(url);
-      }
+      const url = `/api/icon?address=${selectedToken.address}&chainId=${chainId}`;
+      setSelectedTokenIcon(url);
     }
   }, [selectedToken?.address, chainId]);
 
@@ -261,14 +254,8 @@ export function TokenInput({
       const cacheKey = `${tokenChainId}-${token.address}`;
       
       if (!suggestionIcons.has(cacheKey)) {
-        const cached = iconCacheRef.current.get(cacheKey);
-        if (cached) {
-          setSuggestionIcons((prev) => new Map(prev).set(cacheKey, cached));
-        } else {
-          const url = getTokenLogoUrl(token, tokenChainId);
-          iconCacheRef.current.set(cacheKey, url);
-          setSuggestionIcons((prev) => new Map(prev).set(cacheKey, url));
-        }
+        const url = `/api/icon?address=${token.address}&chainId=${tokenChainId}`;
+        setSuggestionIcons((prev) => new Map(prev).set(cacheKey, url));
       }
     });
   }, [suggestions.length, chainId]);

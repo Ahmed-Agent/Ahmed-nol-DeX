@@ -332,7 +332,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
                 >
                   <div className="suggestion-left">
                     <img 
-                      src={getTokenLogoUrl(token, tokenChainId)} 
+                      src={`/api/icon?address=${token.address}&chainId=${tokenChainId || (chain === 'ETH' ? 1 : 137)}`} 
                       alt={token.symbol}
                       style={{ width: '28px', height: '28px', borderRadius: '50%' }}
                       onError={(e) => {
