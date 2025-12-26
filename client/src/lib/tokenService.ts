@@ -6,7 +6,6 @@ export interface Token {
   symbol: string;
   name: string;
   decimals: number;
-  logoURI: string;
 }
 
 // Filter function to remove unwanted tokens
@@ -54,7 +53,6 @@ async function loadTokensFromSelfHosted(chainId: number): Promise<Token[] | null
       symbol: t.symbol || '',
       name: t.name || '',
       decimals: t.decimals || 18,
-      logoURI: t.logoURI || '',
     })).filter((t: any) => t.address).filter(isTokenAllowed);
   } catch (e) {
     console.error(`Failed to load tokens from API for chain ${chainId}:`, e);

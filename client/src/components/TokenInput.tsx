@@ -264,13 +264,35 @@ export function TokenInput({
     unsubscribersRef.current.forEach(unsub => unsub());
     unsubscribersRef.current.clear();
 
+    // Fetch server cached prices immediately for all suggestions
     suggestions.forEach(({ token }) => {
       const tokenChainId = (token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
       const subKey = `${tokenChainId}-${token.address.toLowerCase()}`;
       
-      // Request immediate server-side caching when token appears in suggestions
-      fetch(`/api/prices/onchain?address=${token.address}&chainId=${tokenChainId}`).catch(() => {});
+      // Fetch cached price immediately and display it
+      fetch(`/api/prices/onchain?address=${token.address}&chainId=${tokenChainId}`)
+        .then(res => res.json())
+        .then((priceData: OnChainPrice) => {
+          setSuggestions((prev) =>
+            prev.map((item) => {
+              if (item.token.address.toLowerCase() === token.address.toLowerCase() && 
+                  (item.token as ExtendedToken).chainId === tokenChainId) {
+                return {
+                  ...item,
+                  token: {
+                    ...item.token,
+                    currentPrice: priceData.price,
+                  },
+                  price: priceData.price,
+                };
+              }
+              return item;
+            })
+          );
+        })
+        .catch(() => {});
 
+      // Subscribe to live price updates via WebSocket
       const unsubscribe = subscribeToPrice(token.address, tokenChainId, (priceData: OnChainPrice) => {
         setSuggestions((prev) =>
           prev.map((item) => {
@@ -410,7 +432,63 @@ export function TokenInput({
           data-testid={`suggestions-${side}`}
         >
           {loading ? (
-            <div style={{ padding: '12px', textAlign: 'center', opacity: 0.7 }}>Loading...</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' }}>
+              {[...Array(3)].map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.03)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        background: 'rgba(255,255,255,0.1)',
+                        animation: 'pulse 2s infinite',
+                      }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          height: '12px',
+                          borderRadius: '4px',
+                          background: 'rgba(255,255,255,0.1)',
+                          marginBottom: '4px',
+                          animation: 'pulse 2s infinite',
+                          width: '60px',
+                        }}
+                      />
+                      <div
+                        style={{
+                          height: '10px',
+                          borderRadius: '3px',
+                          background: 'rgba(255,255,255,0.05)',
+                          animation: 'pulse 2s infinite',
+                          width: '80px',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      height: '12px',
+                      borderRadius: '4px',
+                      background: 'rgba(255,255,255,0.1)',
+                      animation: 'pulse 2s infinite',
+                      width: '50px',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
           ) : suggestions.length === 0 ? (
             <div style={{ padding: '12px', textAlign: 'center', opacity: 0.7 }}>No {chain === 'BRG' ? 'ETH/POL' : chain} tokens found</div>
           ) : (

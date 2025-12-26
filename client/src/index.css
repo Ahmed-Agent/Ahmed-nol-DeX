@@ -1597,6 +1597,15 @@ body.eth-chain .glassy-btn.connected {
   }
 }
 
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 @keyframes fadeCountdown {
   0% {
     opacity: 1;
