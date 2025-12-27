@@ -267,8 +267,17 @@ function startUnconditionalPriceRefresh() {
       const chainId = Number(chainIdStr);
       
       // Fetch fresh price unconditionally (ignore cache)
-      await getOnChainPrice(address, chainId);
-      // Price is now cached in onChainCache, ready to stream on subscription
+      const price = await getOnChainPrice(address, chainId);
+      
+      // Imeadietly check for the SUBSCRIBED users to refresh their price in the frontend
+      // The singleflight "price" refresh subscribers should only be for subscribers that the 1 min ttl not active
+      const sub = activeSubscriptions.get(tokenKey);
+      if (sub && !sub.ttlTimer && sub.clients.size > 0 && price) {
+        const msg = JSON.stringify({ type: 'price', data: price, address, chainId });
+        sub.clients.forEach(ws => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+        });
+      }
     }
     
     console.log('[PriceCache] Refresh complete');
