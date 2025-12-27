@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount, useChainId, useBalance, useSwitchChain } from 'wagmi';
 import { ethers } from 'ethers';
 import { useLocation } from 'wouter';
+import confetti from 'canvas-confetti';
 import { TokenInput } from '@/components/TokenInput';
 import { SlippageControl } from '@/components/SlippageControl';
 import { TokenInfoSidebar } from '@/components/TokenInfoSidebar';
