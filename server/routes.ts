@@ -8,6 +8,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { ensureTokenListExists } from "./tokenUpdater";
 import { subscribeToken, unsubscribeToken, getActiveTokens, getMetrics } from "./watchlistManager";
 import { startHourlyRefreshScheduler, scheduleNewTokenRefresh } from "./hourlyRefreshScheduler";
+import { startNewTokenChecker } from "./newTokenChecker";
 
 // Single-flight token refresh mechanism
 let tokenRefreshTimer: NodeJS.Timeout | null = null;
@@ -324,6 +325,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   
   // Start hourly refresh scheduler (GMT/UTC aligned)
   startHourlyRefreshScheduler();
+  
+  // Start 8-second new token checker (pauses at min 59 and min 0 GMT for hourly refresh)
+  startNewTokenChecker();
 
   const wss = new WebSocketServer({ server: httpServer, path: '/api/ws/prices' });
 
