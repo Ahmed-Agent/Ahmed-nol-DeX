@@ -525,6 +525,7 @@ export function TokenInput({
                     <img 
                       src={iconUrl} 
                       alt={token.symbol}
+                      style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }}
                       onError={(e) => {
                         console.log(`[TokenInput] Image failed to load: ${(e.target as HTMLImageElement).src}`);
                         (e.target as HTMLImageElement).src = getPlaceholderImage();
