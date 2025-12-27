@@ -212,7 +212,20 @@ async function fetchTokenPriceFromDex(
       config.usdcAddr,
       config.usdtAddr,
       config.wethAddr,
-    ].map(addr => ethers.utils.getAddress(addr));
+      "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT Mainnet (fallback)
+      "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", // USDC Mainnet (fallback)
+      "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // WETH Mainnet (fallback)
+    ].map(addr => {
+      try {
+        return ethers.utils.getAddress(addr);
+      } catch (e) {
+        return null;
+      }
+    }).filter((addr): addr is string => !!addr);
+
+    // Keep track of the best price found (highest liquidity/reserves)
+    let bestPrice: number | null = null;
+    let maxLiquidity = ethers.BigNumber.from(0);
 
     for (const factoryAddr of config.factories) {
       try {
@@ -235,6 +248,10 @@ async function fetchTokenPriceFromDex(
               const tokenReserve = isToken0 ? reserve0 : reserve1;
               const stableReserve = isToken0 ? reserve1 : reserve0;
 
+              // Simple liquidity check: use the pair with the most tokens (normalized by decimals later if needed)
+              // For now, we just prefer non-zero reserves and prioritize the first successful one
+              // but we can improve this by comparing stableReserve values
+              
               const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
               const stableContract = new ethers.Contract(targetStable, ERC20_ABI, provider);
               
@@ -243,9 +260,12 @@ async function fetchTokenPriceFromDex(
                 stableContract.decimals().catch(() => 18)
               ]);
 
-              let priceInStable =
-                parseFloat(ethers.utils.formatUnits(stableReserve, stableDecimals)) /
-                parseFloat(ethers.utils.formatUnits(tokenReserve, tokenDecimals));
+              const tokenUnits = parseFloat(ethers.utils.formatUnits(tokenReserve, tokenDecimals));
+              const stableUnits = parseFloat(ethers.utils.formatUnits(stableReserve, stableDecimals));
+              
+              if (tokenUnits === 0) continue;
+              
+              let priceInStable = stableUnits / tokenUnits;
 
               // If we paired with WETH, we need to convert WETH price to USDC
               if (targetStable.toLowerCase() === config.wethAddr.toLowerCase()) {
@@ -253,7 +273,14 @@ async function fetchTokenPriceFromDex(
                 if (wethPrice) priceInStable *= wethPrice;
               }
 
-              if (priceInStable > 0) return priceInStable;
+              if (priceInStable > 0) {
+                // If this pair has significantly more "value" in reserves, use its price
+                const currentLiquidity = stableReserve; // Crude but effective for same-stable comparisons
+                if (currentLiquidity.gt(maxLiquidity)) {
+                  maxLiquidity = currentLiquidity;
+                  bestPrice = priceInStable;
+                }
+              }
             }
           } catch (e) {
             continue;
@@ -263,6 +290,7 @@ async function fetchTokenPriceFromDex(
         continue;
       }
     }
+    return bestPrice;
 
     return null;
   } catch (e) {
