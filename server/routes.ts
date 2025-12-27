@@ -156,10 +156,10 @@ async function getOnChainAnalytics(address: string, chainId: number): Promise<On
       analyticsCache.set(cacheKey, { data: result, timestamp: Date.now() });
       
       // Broadcast to all subscribers
-      const subs = analyticsSubscriptions.get(cacheKey);
-      if (subs && subs.size > 0) {
+      const sub = analyticsSubscriptions.get(cacheKey);
+      if (sub && sub.clients.size > 0) {
         const msg = JSON.stringify({ type: 'analytics', data: result, address, chainId });
-        subs.forEach(ws => {
+        sub.clients.forEach(ws => {
           if (ws.readyState === WebSocket.OPEN) ws.send(msg);
         });
       }
@@ -232,17 +232,19 @@ function reloadAllTokensForWatching() {
 // Refresh analytics for all watched tokens and broadcast to subscribers
 async function refreshAllAnalytics() {
   const tokenArray = Array.from(watchedTokens);
-  console.log(`[Analytics] Refreshing ${tokenArray.length} tokens...`);
-  
-  for (const tokenKey of tokenArray) {
-    const [chainIdStr, address] = tokenKey.split('-');
-    const chainId = Number(chainIdStr);
+    const metrics = getMetrics();
+    console.log(`[Analytics] Refreshing ${tokenArray.length} tokens... Watched: ${metrics.totalWatchedTokens}`);
     
-    // Only refresh if we have subscribers or it's from the initial token list
-    const cacheKey = `analytics-${chainId}-${address}`;
-    const hasSubs = analyticsSubscriptions.has(cacheKey);
-    const cached = analyticsCache.get(cacheKey);
-    const isExpired = !cached || Date.now() - cached.timestamp >= ANALYTICS_CACHE_TTL;
+    for (const tokenKey of tokenArray) {
+      const [chainIdStr, address] = tokenKey.split('-');
+      const chainId = Number(chainIdStr);
+      
+      // Only refresh if we have subscribers or it's from the initial token list
+      const cacheKey = `analytics-${chainId}-${address}`;
+      const sub = analyticsSubscriptions.get(cacheKey);
+      const hasSubs = sub && sub.clients.size > 0;
+      const cached = analyticsCache.get(cacheKey);
+      const isExpired = !cached || Date.now() - cached.timestamp >= ANALYTICS_CACHE_TTL;
     
     if (hasSubs || isExpired) {
       await getOnChainAnalytics(address, chainId);
@@ -389,7 +391,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           
           analyticsSubscriptions.get(analyticsKey)!.lastSeen = Date.now();
           
-          // Send initial data...
+          // Send initial analytics data to client
+          // Background cache will update this token's analytics
+          const analytics = await getOnChainAnalytics(data.address, data.chainId);
+          if (analytics && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'analytics', data: analytics, address: data.address, chainId: data.chainId }));
+          }
         } else if (data.type === 'unsubscribe') {
           const key = `${data.chainId}-${data.address.toLowerCase()}`;
           const analyticsKey = `analytics-${key}`;
@@ -397,25 +404,34 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           // Start 1-minute TTL when client explicitly unsubscribes (e.g. dropdown closed or token unselected)
           const sub = activeSubscriptions.get(key);
           if (sub && sub.clients.has(ws)) {
-            if (sub.ttlTimer) clearTimeout(sub.ttlTimer);
-            sub.ttlTimer = setTimeout(() => {
-              if (activeSubscriptions.get(key) === sub) {
-                activeSubscriptions.delete(key);
-                const [cid, addr] = key.split('-');
-                unsubscribeToken(Number(cid), addr);
-                console.log(`[WS] TTL expired: Unsubscribed from ${key}`);
-              }
-            }, 60000); // 1 minute TTL
+            // Check if this was the last active client for this token
+            if (sub.clients.size <= 1) {
+              if (sub.ttlTimer) clearTimeout(sub.ttlTimer);
+              sub.ttlTimer = setTimeout(() => {
+                const currentSub = activeSubscriptions.get(key);
+                if (currentSub === sub) {
+                  activeSubscriptions.delete(key);
+                  const [cid, addr] = key.split('-');
+                  unsubscribeToken(Number(cid), addr);
+                  console.log(`[WS] TTL expired: Unsubscribed from ${key}`);
+                }
+              }, 60000); // 1 minute TTL
+            }
+            sub.clients.delete(ws);
           }
 
           const aSub = analyticsSubscriptions.get(analyticsKey);
           if (aSub && aSub.clients.has(ws)) {
-            if (aSub.ttlTimer) clearTimeout(aSub.ttlTimer);
-            aSub.ttlTimer = setTimeout(() => {
-              if (analyticsSubscriptions.get(analyticsKey) === aSub) {
-                analyticsSubscriptions.delete(analyticsKey);
-              }
-            }, 60000);
+            if (aSub.clients.size <= 1) {
+              if (aSub.ttlTimer) clearTimeout(aSub.ttlTimer);
+              aSub.ttlTimer = setTimeout(() => {
+                const currentASub = analyticsSubscriptions.get(analyticsKey);
+                if (currentASub === aSub) {
+                  analyticsSubscriptions.delete(analyticsKey);
+                }
+              }, 60000);
+            }
+            aSub.clients.delete(ws);
           }
         }
       } catch (e) {

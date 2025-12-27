@@ -82,74 +82,74 @@ export function TokenInput({
         const cgStats = getCgStatsMap(cid);
         for (const { token, stats } of topTokens) {
           const tokenStats = stats || cgStats.get(low(token.symbol)) || cgStats.get(low(token.name));
-          const currentPrice = tokenStats?.price ?? await getTokenPriceUSD(token.address, token.decimals, cid);
-          allTokens.push({
-            token: {
-              ...token,
-              chainId: cid,
-              currentPrice,
-              priceChange24h: tokenStats?.change ?? undefined,
-            },
-            stats: tokenStats || null,
-            price: currentPrice ?? null,
-          });
+            const currentPrice = (tokenStats?.price ?? (await getTokenPriceUSD(token.address, token.decimals, cid))) as number | undefined;
+            allTokens.push({
+              token: {
+                ...token,
+                chainId: cid,
+                currentPrice,
+                priceChange24h: tokenStats?.change ?? undefined,
+              },
+              stats: tokenStats || null,
+              price: currentPrice ?? null,
+            });
+          }
         }
+        console.log('[handleSearch] allTokens pre-filter:', allTokens.length, allTokens);
+        const filtered = allTokens.filter(item => !isLikelyScam(item.token, allTokens, false));
+        console.log('[handleSearch] allTokens post-filter:', filtered.length, filtered);
+        setSuggestions(filtered.slice(0, 15));
+        setShowSuggestions(true);
+        return;
       }
-      console.log('[handleSearch] allTokens pre-filter:', allTokens.length, allTokens);
-      const filtered = allTokens.filter(item => !isLikelyScam(item.token, allTokens, false));
-      console.log('[handleSearch] allTokens post-filter:', filtered.length, filtered);
-      setSuggestions(filtered.slice(0, 15));
-      setShowSuggestions(true);
-      return;
-    }
 
-    setLoading(true);
-    try {
-      let allResults: { token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }; stats: TokenStats | null; price: number | null; marketCap: number }[] = [];
-      
-      for (const cid of chainIds) {
-        // Check if query is a token address
-        if (isAddress(query)) {
-          const token = await getTokenByAddress(query, cid);
-          if (token) {
+      setLoading(true);
+      try {
+        let allResults: { token: ExtendedToken & { currentPrice?: number; priceChange24h?: number }; stats: TokenStats | null; price: number | null; marketCap: number }[] = [];
+        
+        for (const cid of chainIds) {
+          // Check if query is a token address
+          if (isAddress(query)) {
+            const token = await getTokenByAddress(query, cid);
+            if (token) {
+              const cgStats = getCgStatsMap(cid);
+              const stats = cgStats.get(low(token.symbol)) || cgStats.get(low(token.name)) || null;
+              const currentPrice = (stats?.price ?? (await getTokenPriceUSD(token.address, token.decimals, cid))) as number | undefined;
+              allResults.push({
+                token: {
+                  ...token,
+                  chainId: cid,
+                  currentPrice,
+                  priceChange24h: stats?.change ?? undefined,
+                },
+                stats,
+                price: currentPrice ?? null,
+                marketCap: stats?.marketCap || 0,
+              });
+            }
+          } else {
+            const results = await searchTokens(query, cid);
+            console.log(`[handleSearch] results for ${cid}:`, results.length);
             const cgStats = getCgStatsMap(cid);
-            const stats = cgStats.get(low(token.symbol)) || cgStats.get(low(token.name)) || null;
-            const currentPrice = stats?.price ?? await getTokenPriceUSD(token.address, token.decimals, cid);
-            allResults.push({
-              token: {
-                ...token,
-                chainId: cid,
-                currentPrice,
-                priceChange24h: stats?.change ?? undefined,
-              },
-              stats,
-              price: currentPrice ?? null,
-              marketCap: stats?.marketCap || 0,
-            });
-          }
-        } else {
-          const results = await searchTokens(query, cid);
-          console.log(`[handleSearch] results for ${cid}:`, results.length);
-          const cgStats = getCgStatsMap(cid);
 
-          for (const token of results) {
-            const stats = cgStats.get(low(token.symbol)) || cgStats.get(low(token.name)) || null;
-            const currentPrice = stats?.price ?? await getTokenPriceUSD(token.address, token.decimals, cid);
-            const marketCap = stats?.marketCap || (currentPrice && stats?.volume24h ? (currentPrice * stats.volume24h * 1000) : 0);
-            allResults.push({
-              token: {
-                ...token,
-                chainId: cid,
-                currentPrice,
-                priceChange24h: stats?.change ?? undefined,
-              },
-              stats,
-              price: currentPrice ?? null,
-              marketCap,
-            });
+            for (const token of results) {
+              const stats = cgStats.get(low(token.symbol)) || cgStats.get(low(token.name)) || null;
+              const currentPrice = (stats?.price ?? (await getTokenPriceUSD(token.address, token.decimals, cid))) as number | undefined;
+              const marketCap = stats?.marketCap || (currentPrice && stats?.volume24h ? (currentPrice * stats.volume24h * 1000) : 0);
+              allResults.push({
+                token: {
+                  ...token,
+                  chainId: cid,
+                  currentPrice,
+                  priceChange24h: stats?.change ?? undefined,
+                },
+                stats,
+                price: currentPrice ?? null,
+                marketCap,
+              });
+            }
           }
         }
-      }
 
       // Sort: Top 5 by market cap, rest by 24h volume
       const top5 = allResults.sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 5);
@@ -240,7 +240,8 @@ export function TokenInput({
   // Fetch icon for selected token using cached /api/icon endpoint
   useEffect(() => {
     if (selectedToken) {
-      const tokenChainId = (selectedToken as ExtendedToken).chainId || chainId;
+      const t = selectedToken as ExtendedToken;
+      const tokenChainId = t.chainId || chainId;
       console.log(`[TokenInput] Loading icon for ${selectedToken.symbol} on chain ${tokenChainId}`);
       setSelectedTokenIcon(getTokenLogoUrl(selectedToken, tokenChainId));
     }
@@ -253,7 +254,8 @@ export function TokenInput({
     const newIcons = new Map(suggestionIcons);
     let changed = false;
     suggestions.forEach(({ token }) => {
-      const tokenChainId = (token as ExtendedToken).chainId || chainId;
+      const t = token as ExtendedToken;
+      const tokenChainId = t.chainId || chainId;
       const cacheKey = getIconCacheKey(token.address, tokenChainId);
       
       if (!newIcons.has(cacheKey)) {
@@ -275,7 +277,8 @@ export function TokenInput({
       // Only unsubscribe tokens that are NOT currently selected
       unsubscribersRef.current.forEach((unsub, key) => {
         if (selectedToken) {
-          const selectedKey = `${selectedToken.chainId || chainId}-${selectedToken.address.toLowerCase()}`;
+          const t = selectedToken as ExtendedToken;
+          const selectedKey = `${t.chainId || chainId}-${selectedToken.address.toLowerCase()}`;
           if (key === selectedKey) return;
         }
         unsub();
@@ -287,11 +290,13 @@ export function TokenInput({
     connectPriceService();
     
     const currentTokenKeys = new Set(suggestions.map(({ token }) => {
-      const tokenChainId = (token as ExtendedToken).chainId || chainId;
+      const t = token as ExtendedToken;
+      const tokenChainId = t.chainId || chainId;
       return `${tokenChainId}-${token.address.toLowerCase()}`;
     }));
     if (selectedToken) {
-      currentTokenKeys.add(`${selectedToken.chainId || chainId}-${selectedToken.address.toLowerCase()}`);
+      const t = selectedToken as ExtendedToken;
+      currentTokenKeys.add(`${t.chainId || chainId}-${selectedToken.address.toLowerCase()}`);
     }
 
     // Cleanup unsubscribers for tokens no longer in view or selected
@@ -303,7 +308,8 @@ export function TokenInput({
     });
 
     suggestions.forEach(({ token }) => {
-      const tokenChainId = (token as ExtendedToken).chainId || chainId;
+      const t = token as ExtendedToken;
+      const tokenChainId = t.chainId || chainId;
       const subKey = `${tokenChainId}-${token.address.toLowerCase()}`;
       
       if (!unsubscribersRef.current.has(subKey)) {
