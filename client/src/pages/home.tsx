@@ -728,12 +728,22 @@ export default function Home() {
         const explorerUrl = effectiveChain === 'ETH' ? ethereumConfig.explorerUrl : config.explorerUrl;
         showToast(`${isBridge ? 'Bridge' : 'Swap'} successful! ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`, { type: 'success', ttl: 8000 });
         
-        // Trigger celebration animation
+        // Trigger celebration animation with mode-specific colors
+        let confettiColors = ['#7013ff', '#b444ff', '#ffffff']; // Default (POL/General)
+        
+        if (chain === 'ETH') {
+          confettiColors = ['#627EEA', '#3C3C3D', '#ffffff']; // ETH colors (Blue/Grey/White)
+        } else if (chain === 'BRG') {
+          confettiColors = ['#00ffcc', '#0099ff', '#ffffff']; // Bridge colors (Cyan/Azure/White)
+        } else if (chain === 'POL') {
+          confettiColors = ['#8247E5', '#ffffff']; // Polygon colors (Purple/White)
+        }
+
         confetti({
           particleCount: 150,
           spread: 70,
           origin: { y: 0.6 },
-          colors: ['#7013ff', '#b444ff', '#ffffff']
+          colors: confettiColors
         });
 
         setFromAmount('');
