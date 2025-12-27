@@ -48,6 +48,7 @@ const ANALYTICS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const watchedTokens = new Set<string>();
 const analyticsSubscriptions = new Map<string, { clients: Set<WebSocket>, lastSeen: number, ttlTimer?: NodeJS.Timeout }>();
 const analyticsFetchingLocks = new Map<string, Promise<any>>();
+const iconCache = new Map<string, string>();
 
 const CHAIN_CONFIG: Record<number, { rpc: string; usdcAddr: string; usdtAddr: string; wethAddr: string; factories: string[]; scanApi: string; scanKey: string }> = {
   1: {
