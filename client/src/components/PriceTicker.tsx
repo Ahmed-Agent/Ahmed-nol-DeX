@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getTopTokens, getCgStatsMap } from '@/lib/tokenService';
 import { formatUSD, low } from '@/lib/config';
+import { subscribeToPrice } from '@/lib/priceService';
 
 interface TickerToken {
   symbol: string;
@@ -8,22 +9,9 @@ interface TickerToken {
   change: number;
   logoURI: string;
   marketCap: number;
-  address: string; // Added address to TickerToken interface
+  address: string;
+  chainId: number;
 }
-
-// Mocking functions that are likely used in the provided changes snippet
-// In a real scenario, these would be imported and correctly implemented.
-const loadTokensAndMarkets = async (): Promise<Map<string, any>> => {
-  // This is a placeholder. Replace with actual implementation.
-  console.log('loadTokensAndMarkets called');
-  return new Map();
-};
-
-// Mock state setter for demonstration purposes
-const setTickerTokens = (tokens: TickerToken[]) => {
-  console.log('setTickerTokens called with:', tokens.length, 'tokens');
-};
-
 
 export function PriceTicker() {
   const [tokens, setTokens] = useState<TickerToken[]>([]);
@@ -31,9 +19,7 @@ export function PriceTicker() {
   useEffect(() => {
     const fetchTickerData = async () => {
       try {
-        // Assuming loadTokensAndMarkets returns a Map where keys are addresses and values are token objects
-        // Each token object is assumed to have properties like: address, marketCap, priceChange24h
-        const tokensMap = await loadTokensAndMarkets();
+        const tokensMap = await getTopTokens();
         const tokenArray = Array.from(tokensMap.values());
 
         // Get top 7 by market cap
@@ -50,36 +36,57 @@ export function PriceTicker() {
 
         // Combine using Set to avoid duplicates
         const addressSet = new Set<string>();
-        const uniqueTokens: typeof tokenArray = [];
+        const uniqueTokens: TickerToken[] = [];
 
         [...topByMcap, ...topByChange].forEach(token => {
           const addr = token.address.toLowerCase();
           if (!addressSet.has(addr)) {
             addressSet.add(addr);
-            uniqueTokens.push(token);
+            uniqueTokens.push({
+              symbol: token.symbol,
+              price: token.price || 0,
+              change: token.priceChange24h || 0,
+              logoURI: token.logoURI || '',
+              marketCap: token.marketCap || 0,
+              address: token.address,
+              chainId: token.chainId || 1
+            });
           }
         });
 
-        console.log('Ticker loaded unique tokens:', uniqueTokens.length);
-        // Ensure the state is updated with the correct TickerToken interface
-        setTokens(uniqueTokens.map(t => ({
-          symbol: t.symbol,
-          price: t.price,
-          change: t.priceChange24h, // Assuming priceChange24h is what's used for 'change'
-          logoURI: t.logoURI || '', // Assuming logoURI is available
-          marketCap: t.marketCap,
-          address: t.address,
-        })));
+        setTokens(uniqueTokens);
       } catch (error) {
         console.error('Failed to load ticker data:', error);
       }
     };
 
     fetchTickerData();
-    const interval = setInterval(fetchTickerData, 15000); // Real-time refresh every 15 seconds
-    return () => clearInterval(interval);
   }, []);
 
+  // Listen for real-time server singleflight updates
+  useEffect(() => {
+    if (tokens.length === 0) return;
+
+    const unsubscribers = tokens.map(token => {
+      return subscribeToPrice(token.address, token.chainId, (newPriceData) => {
+        setTokens(prev => prev.map(t => {
+          if (t.address.toLowerCase() === token.address.toLowerCase() && t.chainId === token.chainId) {
+            return {
+              ...t,
+              price: newPriceData.price,
+              marketCap: newPriceData.mc,
+              // Note: volume/timestamp updated but not displayed in ticker
+            };
+          }
+          return t;
+        }));
+      });
+    });
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
+  }, [tokens.length]); // Re-subscribe if token list changes
 
   if (tokens.length === 0) return null;
 

@@ -260,17 +260,20 @@ function startUnconditionalPriceRefresh() {
     const activeTokens = Array.from(watchedTokens);
     console.log(`[PriceCache] Unconditionally refreshing ${activeTokens.length} dynamic tokens (1m cycle)...`);
     
-    for (const tokenKey of activeTokens) {
-      const [chainIdStr, address] = tokenKey.split('-');
-      const chainId = Number(chainIdStr);
-      
-      // Force on-chain fetch by bypassing cache for the 1-minute global refresh
-      // We pass bypassCache=true to ensure we hit on-chain every minute
-      const { fetchOnChainData, invalidateCache } = await import("./onchainDataFetcher");
-      invalidateCache(address, chainId); // Clear fetcher internal cache
-      
-      const price = await getOnChainPrice(address, chainId);
-      // broadcast is handled inside getOnChainPrice via the smart caching logic
+    // Use parallel processing with a small delay between batches to avoid RPC rate limits
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < activeTokens.length; i += BATCH_SIZE) {
+      const batch = activeTokens.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (tokenKey) => {
+        const [chainIdStr, address] = tokenKey.split('-');
+        const chainId = Number(chainIdStr);
+        
+        // Force on-chain fetch by bypassing cache for the 1-minute global refresh
+        const { invalidateCache } = await import("./onchainDataFetcher");
+        invalidateCache(address, chainId); // Clear fetcher internal cache
+        
+        await getOnChainPrice(address, chainId);
+      }));
     }
     
     console.log('[PriceCache] Dynamic tokens refresh complete');
