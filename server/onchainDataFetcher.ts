@@ -151,33 +151,48 @@ async function fetchTokenPriceFromV3(
     for (const stable of STABLES) {
       if (tokenAddr.toLowerCase() === stable.toLowerCase()) continue;
       
+      let bestFeePrice: number | null = null;
+      let maxFeeLiquidity = ethers.BigNumber.from(0);
+
       for (const fee of v3.fees) {
         try {
           const quoter = new ethers.Contract(v3.quoter, V3_QUOTER_ABI, provider);
-          // staticCall to avoid gas estimation/execution
-          const amountOut = await quoter.callStatic.quoteExactInputSingle(
-            tokenAddr,
-            stable,
-            fee,
-            amountIn,
-            0
-          );
+          const poolAddress = await new ethers.Contract(v3.factory, V3_FACTORY_ABI, provider)
+            .getPool(tokenAddr, stable, fee);
+          
+          if (poolAddress === ethers.constants.AddressZero) continue;
 
-          if (amountOut.gt(0)) {
-            const stableContract = new ethers.Contract(stable, ERC20_ABI, provider);
-            const stableDecimals = await stableContract.decimals();
-            let price = parseFloat(ethers.utils.formatUnits(amountOut, stableDecimals));
-            
-            if (stable.toLowerCase() === config.wethAddr.toLowerCase()) {
-              const wethPrice = await fetchTokenPriceFromDex(config.wethAddr, chainId, true);
-              if (wethPrice) price *= wethPrice;
+          // Check pool balance for crude liquidity metric
+          const stableContract = new ethers.Contract(stable, ERC20_ABI, provider);
+          const poolBalance = await stableContract.balanceOf(poolAddress);
+
+          if (poolBalance.gt(maxFeeLiquidity)) {
+            const amountOut = await quoter.callStatic.quoteExactInputSingle(
+              tokenAddr,
+              stable,
+              fee,
+              amountIn,
+              0
+            );
+
+            if (amountOut.gt(0)) {
+              const stableDecimals = await stableContract.decimals();
+              let price = parseFloat(ethers.utils.formatUnits(amountOut, stableDecimals));
+              
+              if (stable.toLowerCase() === config.wethAddr.toLowerCase()) {
+                const wethPrice = await fetchTokenPriceFromDex(config.wethAddr, chainId, true);
+                if (wethPrice) price *= wethPrice;
+              }
+              
+              bestFeePrice = price;
+              maxFeeLiquidity = poolBalance;
             }
-            return price;
           }
         } catch (e) {
           continue;
         }
       }
+      if (bestFeePrice) return bestFeePrice;
     }
   } catch (e) {
     console.error(`[OnChainFetcher] V3 decimals error for ${tokenAddr}:`, e);
