@@ -266,8 +266,9 @@ function startUnconditionalPriceRefresh() {
       const [chainIdStr, address] = tokenKey.split('-');
       const chainId = Number(chainIdStr);
       
-      // Fetch fresh price unconditionally (ignore cache)
-      const price = await getOnChainPrice(address, chainId);
+      // Use priceFetchingLocks to avoid duplicate work if a subscription request just came in
+      const pricePromise = fetchPriceAggregated(address, chainId);
+      const price = await pricePromise;
       
       // Imeadietly check for the SUBSCRIBED users to refresh their price in the frontend
       // The singleflight "price" refresh subscribers should only be for subscribers that the 1 min ttl not active
