@@ -37,7 +37,8 @@ const priceFetchingLocks = new Map<string, Promise<any>>();
 
 const iconCache = new Map<string, { url: string; expires: number }>();
 const iconFetchingInFlight = new Map<string, Promise<string>>();
-const ICON_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+const iconRefreshTimers = new Map<string, NodeJS.Timeout>();
+const ICON_CACHE_TTL = 60 * 24 * 60 * 60 * 1000; // 60 days
 
 // Analytics caching with 1-hour TTL
 interface CachedAnalytics {
@@ -448,6 +449,121 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Helper function to set up auto-refresh timer for an icon
+  function setupIconAutoRefresh(cacheKey: string) {
+    // Clear existing timer if any
+    if (iconRefreshTimers.has(cacheKey)) {
+      clearTimeout(iconRefreshTimers.get(cacheKey)!);
+    }
+    
+    // Set up a timer to auto-refresh when TTL expires
+    const timer = setTimeout(async () => {
+      console.log(`[Icon] Auto-refreshing expired icon for ${cacheKey}`);
+      iconCache.delete(cacheKey);
+      iconRefreshTimers.delete(cacheKey);
+      
+      // Trigger a refresh by fetching the icon again
+      const [chainId, addr] = cacheKey.split('-');
+      const cid = Number(chainId);
+      
+      // Use the same fetch logic to re-cache the icon
+      if (!iconFetchingInFlight.has(cacheKey)) {
+        const promise = fetchIconUrl(addr, cid);
+        iconFetchingInFlight.set(cacheKey, promise);
+        await promise;
+        iconFetchingInFlight.delete(cacheKey);
+        
+        // Set up auto-refresh again for the newly cached icon
+        const cached = iconCache.get(cacheKey);
+        if (cached) {
+          setupIconAutoRefresh(cacheKey);
+        }
+      }
+    }, ICON_CACHE_TTL);
+    
+    iconRefreshTimers.set(cacheKey, timer);
+  }
+
+  // Helper function to fetch icon URL from various sources
+  async function fetchIconUrl(addr: string, cid: number): Promise<string> {
+    console.log(`[Icon] Fetching for ${addr} on chain ${cid}`);
+    const cacheKey = `${cid}-${addr}`;
+    
+    // 1. Try to get logoURI from tokens.json first (highest priority)
+    try {
+      const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
+      const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
+      const chainKey = cid === 1 ? 'ethereum' : 'polygon';
+      const tokensList = tokensData[chainKey] || [];
+      const token = tokensList.find((t: any) => t.address.toLowerCase() === addr);
+      
+      if (token && token.logoURI && token.logoURI.startsWith('http')) {
+        console.log(`[Icon] Found logoURI in tokens.json for ${addr}: ${token.logoURI}`);
+        iconCache.set(cacheKey, { url: token.logoURI, expires: Date.now() + ICON_CACHE_TTL });
+        setupIconAutoRefresh(cacheKey);
+        return token.logoURI;
+      }
+    } catch (e) {
+      console.debug(`[Icon] Failed to fetch logoURI from tokens.json: ${e}`);
+    }
+
+    // Try Trust Wallet first
+    const trustWalletUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${ethers.utils.getAddress(addr)}/logo.png`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(trustWalletUrl, { method: 'HEAD', signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        console.log(`[Icon] Found on Trust Wallet for ${addr} (Checksummed)`);
+        iconCache.set(cacheKey, { url: trustWalletUrl, expires: Date.now() + ICON_CACHE_TTL });
+        setupIconAutoRefresh(cacheKey);
+        return trustWalletUrl;
+      }
+    } catch (e) {
+      console.debug(`[Icon] Trust Wallet failed for ${addr}: ${e}`);
+    }
+    
+    // 3. Try GeckoTerminal
+    const geckoTerminalUrl = `https://assets.geckoterminal.com/networks/${cid === 1 ? 'ethereum' : 'polygon'}/tokens/${addr}/thumb.png`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(geckoTerminalUrl, { method: 'HEAD', signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        console.log(`[Icon] Found on GeckoTerminal for ${addr}`);
+        iconCache.set(cacheKey, { url: geckoTerminalUrl, expires: Date.now() + ICON_CACHE_TTL });
+        setupIconAutoRefresh(cacheKey);
+        return geckoTerminalUrl;
+      }
+    } catch (e) {
+      console.debug(`[Icon] GeckoTerminal failed for ${addr}: ${e}`);
+    }
+    
+    // Try DEXScreener
+    const dexscreenerUrl = `https://dexscreener.com/images/defiplated.png`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(dexscreenerUrl, { method: 'HEAD', signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        iconCache.set(cacheKey, { url: dexscreenerUrl, expires: Date.now() + ICON_CACHE_TTL });
+        setupIconAutoRefresh(cacheKey);
+        return dexscreenerUrl;
+      }
+    } catch (e) {
+      console.debug(`[Icon] DEXScreener failed for ${addr}: ${e}`);
+    }
+    
+    // Fallback to placeholder
+    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhlaWdodD0iMjgiIHZpZXdCb3g9IjAgMCAyOCAyOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNCIgY3k9IjE0IiByPSIxNCIgZmlsbD0iIzJBMkEzQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjODg4IiBmb250LXNpemU9IjEyIj4/PC90ZXh0Pjwvc3ZnPg==';
+    iconCache.set(cacheKey, { url: placeholder, expires: Date.now() + ICON_CACHE_TTL });
+    setupIconAutoRefresh(cacheKey);
+    return placeholder;
+  }
+
   app.get("/api/icon", async (req, res) => {
     const { address, chainId } = req.query;
     if (!address || !chainId) return res.status(400).json({ error: "Missing params" });
@@ -466,78 +582,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       return res.redirect(url);
     }
     
-    const promise = (async () => {
-      console.log(`[Icon] Fetching for ${addr} on chain ${cid}`);
-      // 1. Try to get logoURI from tokens.json first (highest priority)
-      try {
-        const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
-        const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
-        const chainKey = cid === 1 ? 'ethereum' : 'polygon';
-        const tokensList = tokensData[chainKey] || [];
-        const token = tokensList.find((t: any) => t.address.toLowerCase() === addr);
-        
-        if (token && token.logoURI && token.logoURI.startsWith('http')) {
-          console.log(`[Icon] Found logoURI in tokens.json for ${addr}: ${token.logoURI}`);
-          iconCache.set(cacheKey, { url: token.logoURI, expires: Date.now() + ICON_CACHE_TTL });
-          return token.logoURI;
-        }
-      } catch (e) {
-        console.debug(`[Icon] Failed to fetch logoURI from tokens.json: ${e}`);
-      }
-
-      // Try Trust Wallet first
-      const trustWalletUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${ethers.utils.getAddress(addr)}/logo.png`;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(trustWalletUrl, { method: 'HEAD', signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (response.ok) {
-          console.log(`[Icon] Found on Trust Wallet for ${addr} (Checksummed)`);
-          iconCache.set(cacheKey, { url: trustWalletUrl, expires: Date.now() + ICON_CACHE_TTL });
-          return trustWalletUrl;
-        }
-      } catch (e) {
-        console.debug(`[Icon] Trust Wallet failed for ${addr}: ${e}`);
-      }
-      
-      // 3. Try GeckoTerminal
-      const geckoTerminalUrl = `https://assets.geckoterminal.com/networks/${cid === 1 ? 'ethereum' : 'polygon'}/tokens/${addr}/thumb.png`;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(geckoTerminalUrl, { method: 'HEAD', signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (response.ok) {
-          console.log(`[Icon] Found on GeckoTerminal for ${addr}`);
-          iconCache.set(cacheKey, { url: geckoTerminalUrl, expires: Date.now() + ICON_CACHE_TTL });
-          return geckoTerminalUrl;
-        }
-      } catch (e) {
-        console.debug(`[Icon] GeckoTerminal failed for ${addr}: ${e}`);
-      }
-      
-      // Try DEXScreener
-      const dexscreenerUrl = `https://dexscreener.com/images/defiplated.png`;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(dexscreenerUrl, { method: 'HEAD', signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (response.ok) {
-          iconCache.set(cacheKey, { url: dexscreenerUrl, expires: Date.now() + ICON_CACHE_TTL });
-          return dexscreenerUrl;
-        }
-      } catch (e) {
-        console.debug(`[Icon] DEXScreener failed for ${addr}: ${e}`);
-      }
-      
-      // Fallback to placeholder
-      const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhlaWdodD0iMjgiIHZpZXdCb3g9IjAgMCAyOCAyOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNCIgY3k9IjE0IiByPSIxNCIgZmlsbD0iIzJBMkEzQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjODg4IiBmb250LXNpemU9IjEyIj4/PC90ZXh0Pjwvc3ZnPg==';
-      iconCache.set(cacheKey, { url: placeholder, expires: Date.now() + ICON_CACHE_TTL });
-      return placeholder;
-    })();
-    
+    const promise = fetchIconUrl(addr, cid);
     iconFetchingInFlight.set(cacheKey, promise);
     const url = await promise;
     iconFetchingInFlight.delete(cacheKey);
