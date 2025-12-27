@@ -215,9 +215,11 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
       // Fetch cached price immediately and display it
       fetch(`/api/prices/onchain?address=${token.address}&chainId=${tokenChainId}`)
         .then(res => res.json())
-        .then((priceData: OnChainPrice) => {
+        .then((priceData: OnChainPrice | null) => {
+          if (!priceData || priceData.price === undefined || priceData.price === null) return;
           setSuggestions((prev) =>
             prev.map((item) => {
+              if (!item || !item.token) return item;
               if (item.token.address.toLowerCase() === token.address.toLowerCase() && 
                   (item.token as ExtendedToken).chainId === tokenChainId) {
                 return {
@@ -236,9 +238,11 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
         .catch(() => {});
 
       // Subscribe to live price updates via WebSocket
-      const unsubscribe = subscribeToPrice(token.address, tokenChainId, (priceData: OnChainPrice) => {
+      const unsubscribe = subscribeToPrice(token.address, tokenChainId, (priceData: OnChainPrice | null) => {
+        if (!priceData || priceData.price === undefined || priceData.price === null) return;
         setSuggestions((prev) =>
           prev.map((item) => {
+            if (!item || !item.token) return item;
             if (item.token.address.toLowerCase() === token.address.toLowerCase() && 
                 (item.token as ExtendedToken).chainId === tokenChainId) {
               return {
