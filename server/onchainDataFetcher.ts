@@ -291,8 +291,6 @@ async function fetchTokenPriceFromDex(
       }
     }
     return bestPrice;
-
-    return null;
   } catch (e) {
     console.error(`[OnChainFetcher] Price fetch error for ${tokenAddr}:`, e);
     return null;
