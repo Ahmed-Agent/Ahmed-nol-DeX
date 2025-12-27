@@ -240,7 +240,9 @@ export function TokenInput({
   // Fetch icon for selected token using cached /api/icon endpoint
   useEffect(() => {
     if (selectedToken) {
-      setSelectedTokenIcon(getTokenLogoUrl(selectedToken, (selectedToken as ExtendedToken).chainId || chainId));
+      const tokenChainId = (selectedToken as ExtendedToken).chainId || chainId;
+      console.log(`[TokenInput] Loading icon for ${selectedToken.symbol} on chain ${tokenChainId}`);
+      setSelectedTokenIcon(getTokenLogoUrl(selectedToken, tokenChainId));
     }
   }, [selectedToken?.address, chainId, chain]);
 
@@ -248,15 +250,21 @@ export function TokenInput({
   useEffect(() => {
     if (suggestions.length === 0) return;
 
+    const newIcons = new Map(suggestionIcons);
+    let changed = false;
     suggestions.forEach(({ token }) => {
       const tokenChainId = (token as ExtendedToken).chainId || chainId;
-      const cacheKey = `${tokenChainId}-${token.address}`;
+      const cacheKey = `${tokenChainId}-${token.address.toLowerCase()}`;
       
-      if (!suggestionIcons.has(cacheKey)) {
-        setSuggestionIcons((prev) => new Map(prev).set(cacheKey, getTokenLogoUrl(token, tokenChainId)));
+      if (!newIcons.has(cacheKey)) {
+        newIcons.set(cacheKey, getTokenLogoUrl(token, tokenChainId));
+        changed = true;
       }
     });
-  }, [suggestions.length, chainId, chain]);
+    if (changed) {
+      setSuggestionIcons(newIcons);
+    }
+  }, [suggestions, chainId, chain]);
 
   // Subscribe to prices for all suggestions and keep them streaming
   useEffect(() => {
@@ -504,7 +512,7 @@ export function TokenInput({
                 >
                   <div className="suggestion-left">
                     <img 
-                      src={suggestionIcons.get(`${tokenChainId || chainId}-${token.address}`) || getPlaceholderImage()} 
+                      src={suggestionIcons.get(`${tokenChainId || chainId}-${token.address.toLowerCase()}`) || getPlaceholderImage()} 
                       alt={token.symbol}
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = getPlaceholderImage();

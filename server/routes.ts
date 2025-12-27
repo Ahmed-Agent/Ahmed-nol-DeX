@@ -467,22 +467,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
     
     const promise = (async () => {
-      // Try Trust Wallet first
-      const trustWalletUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${addr}/logo.png`;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(trustWalletUrl, { method: 'HEAD', signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (response.ok) {
-          iconCache.set(cacheKey, { url: trustWalletUrl, expires: Date.now() + ICON_CACHE_TTL });
-          return trustWalletUrl;
-        }
-      } catch (e) {
-        console.debug(`[Icon] Trust Wallet failed for ${addr}: ${e}`);
-      }
-      
-      // Try to get logoURI from tokens.json
+      // 1. Try to get logoURI from tokens.json first (highest priority)
       try {
         const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
         const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
@@ -490,15 +475,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const tokensList = tokensData[chainKey] || [];
         const token = tokensList.find((t: any) => t.address.toLowerCase() === addr);
         
-        if (token && token.logoURI) {
+        if (token && token.logoURI && token.logoURI.startsWith('http')) {
+          console.log(`[Icon] Found logoURI in tokens.json for ${addr}: ${token.logoURI}`);
           iconCache.set(cacheKey, { url: token.logoURI, expires: Date.now() + ICON_CACHE_TTL });
           return token.logoURI;
         }
       } catch (e) {
         console.debug(`[Icon] Failed to fetch logoURI from tokens.json: ${e}`);
       }
+
+      // Try Trust Wallet first
+      const trustWalletUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${ethers.utils.getAddress(addr)}/logo.png`;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch(trustWalletUrl, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (response.ok) {
+          console.log(`[Icon] Found on Trust Wallet for ${addr} (Checksummed)`);
+          iconCache.set(cacheKey, { url: trustWalletUrl, expires: Date.now() + ICON_CACHE_TTL });
+          return trustWalletUrl;
+        }
+      } catch (e) {
+        console.debug(`[Icon] Trust Wallet failed for ${addr}: ${e}`);
+      }
       
-      // Try GeckoTerminal
+      // 3. Try GeckoTerminal
       const geckoTerminalUrl = `https://assets.geckoterminal.com/networks/${cid === 1 ? 'ethereum' : 'polygon'}/tokens/${addr}/thumb.png`;
       try {
         const controller = new AbortController();
@@ -506,6 +508,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const response = await fetch(geckoTerminalUrl, { method: 'HEAD', signal: controller.signal });
         clearTimeout(timeoutId);
         if (response.ok) {
+          console.log(`[Icon] Found on GeckoTerminal for ${addr}`);
           iconCache.set(cacheKey, { url: geckoTerminalUrl, expires: Date.now() + ICON_CACHE_TTL });
           return geckoTerminalUrl;
         }
