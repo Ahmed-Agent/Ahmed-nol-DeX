@@ -38,7 +38,37 @@ const SUBSCRIPTION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const activeSubscriptions = new Map<string, { clients: Set<WebSocket>, lastSeen: number, ttlTimer?: NodeJS.Timeout }>();
 const priceFetchingLocks = new Map<string, Promise<any>>();
 
-// ... existing code ...
+// Analytics caching with 1-hour TTL
+interface CachedAnalytics {
+  data: OnChainAnalytics;
+  timestamp: number;
+}
+const analyticsCache = new Map<string, CachedAnalytics>();
+const ANALYTICS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const watchedTokens = new Set<string>();
+const analyticsSubscriptions = new Map<string, { clients: Set<WebSocket>, lastSeen: number, ttlTimer?: NodeJS.Timeout }>();
+const analyticsFetchingLocks = new Map<string, Promise<any>>();
+
+const CHAIN_CONFIG: Record<number, { rpc: string; usdcAddr: string; usdtAddr: string; wethAddr: string; factories: string[]; scanApi: string; scanKey: string }> = {
+  1: {
+    rpc: process.env.VITE_ETH_RPC_URL || "https://eth.llamarpc.com",
+    usdcAddr: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    usdtAddr: "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    wethAddr: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+    factories: ["0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e37608"],
+    scanApi: "https://api.etherscan.io/api",
+    scanKey: process.env.VITE_ETH_POL_API || ""
+  },
+  137: {
+    rpc: process.env.VITE_POL_RPC_URL || "https://polygon-rpc.com",
+    usdcAddr: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+    usdtAddr: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f",
+    wethAddr: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
+    factories: ["0x5757371414417b8C6CAd16e5dBb0d812eEA2d29c", "0xc35DADB65012eC5796536bD9864eD8773aBc74C4"],
+    scanApi: "https://api.polygonscan.com/api",
+    scanKey: process.env.VITE_ETH_POL_API || ""
+  }
+};
 
 async function getOnChainPrice(address: string, chainId: number): Promise<OnChainPrice | null> {
   const { fetchOnChainData } = await import("./onchainDataFetcher");
@@ -59,7 +89,8 @@ async function getOnChainPrice(address: string, chainId: number): Promise<OnChai
     // Smart caching: delete old data if new data arrived to prevent contamination
     // ENSURE IMMEDIATE SINGLEFLIGHT TO SUBSCRIBERS
     const existing = onChainCache.get(cacheKey);
-    if (!existing || existing.price !== result.price) {
+    // If no existing cache OR data is fresh (different price/timestamp), update and singleflight
+    if (!existing || existing.price !== result.price || (result.timestamp - existing.timestamp > 10000)) {
       onChainCache.delete(cacheKey);
       onChainCache.set(cacheKey, result);
 
@@ -68,7 +99,13 @@ async function getOnChainPrice(address: string, chainId: number): Promise<OnChai
       if (sub && sub.clients.size > 0) {
         const msg = JSON.stringify({ type: 'price', data: result, address, chainId });
         sub.clients.forEach(ws => {
-          if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+          if (ws.readyState === WebSocket.OPEN) {
+            try {
+              ws.send(msg);
+            } catch (err) {
+              console.error(`[SingleFlight] Error sending to client:`, err);
+            }
+          }
         });
       }
     }
@@ -257,20 +294,20 @@ function startUnconditionalPriceRefresh() {
     // Reload watched tokens to ensure we have the latest from dynamic tokens list
     reloadAllTokensForWatching();
     
-    const activeTokens = Array.from(watchedTokens);
-    console.log(`[PriceCache] Unconditionally refreshing ${activeTokens.length} dynamic tokens (1m cycle)...`);
+    const dynamicTokens = Array.from(watchedTokens);
+    console.log(`[PriceCache] Unconditionally refreshing ${dynamicTokens.length} dynamic tokens (1m cycle)...`);
     
     // Use parallel processing with a small delay between batches to avoid RPC rate limits
     const BATCH_SIZE = 5;
-    for (let i = 0; i < activeTokens.length; i += BATCH_SIZE) {
-      const batch = activeTokens.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < dynamicTokens.length; i += BATCH_SIZE) {
+      const batch = dynamicTokens.slice(i, i + BATCH_SIZE);
       await Promise.all(batch.map(async (tokenKey) => {
         const [chainIdStr, address] = tokenKey.split('-');
         const chainId = Number(chainIdStr);
         
-        // Force on-chain fetch by bypassing cache for the 1-minute global refresh
+        // Dynamic tokens list refresh logic: bypass internal fetcher cache to hit on-chain
         const { invalidateCache } = await import("./onchainDataFetcher");
-        invalidateCache(address, chainId); // Clear fetcher internal cache
+        invalidateCache(address, chainId); 
         
         await getOnChainPrice(address, chainId);
       }));
