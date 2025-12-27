@@ -28,6 +28,8 @@ const CHAIN_CONFIG: Record<
       "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e37608", // SushiSwap
       "0x115934131916C8b277dd010Ee02de363c09d037c", // ShibaSwap
       "0x01af51A2f11B10025D8F0429408544B9E4936A00", // Kyber V2
+      "0xBA12222222228d8Ba445958a75a0704d566BF2C8", // Balancer V2 Vault
+      "0x1f98431c8ad98523631ae4a59f267346ea31f984", // Uniswap V3 Factory
     ],
   },
   137: {
@@ -40,6 +42,7 @@ const CHAIN_CONFIG: Record<
       "0xc35DADB65012eC5796536bD9864eD8773aBc74C4", // SushiSwap
       "0x9e5A52f57b30f751704e67BC790382379796230d", // ApeSwap
       "0x115934131916C8b277dd010Ee02de363c09d037c", // JetSwap
+      "0xBA12222222228d8Ba445958a75a0704d566BF2C8", // Balancer V2 Vault
     ],
   },
 };
