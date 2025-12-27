@@ -458,12 +458,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     
     const cached = iconCache.get(cacheKey);
     if (cached && Date.now() < cached.expires) {
-      return res.json({ url: cached.url });
+      return res.redirect(cached.url);
     }
     
     if (iconFetchingInFlight.has(cacheKey)) {
       const url = await iconFetchingInFlight.get(cacheKey)!;
-      return res.json({ url });
+      return res.redirect(url);
     }
     
     const promise = (async () => {
@@ -542,7 +542,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const url = await promise;
     iconFetchingInFlight.delete(cacheKey);
     
-    res.json({ url });
+    res.redirect(url);
   });
 
   return httpServer;
