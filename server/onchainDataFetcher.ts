@@ -81,7 +81,8 @@ const fetchingLocks = new Map<string, Promise<OnChainData | null>>();
  */
 async function fetchTokenPriceFromDex(
   tokenAddr: string,
-  chainId: number
+  chainId: number,
+  isInternalWethCall: boolean = false
 ): Promise<number | null> {
   try {
     const config = CHAIN_CONFIG[chainId];
@@ -91,43 +92,56 @@ async function fetchTokenPriceFromDex(
     const tokenAddress = ethers.utils.getAddress(tokenAddr);
     const stablecoinAddr = ethers.utils.getAddress(config.usdcAddr);
 
-    // Try all factories to find a pair
+    // Try all factories and multiple stablecoin pairs to find a price
+    const STABLECOINS = [
+      config.usdcAddr,
+      config.usdtAddr,
+      config.wethAddr, // Use WETH as an intermediate if no direct stable pair exists
+    ].map(addr => ethers.utils.getAddress(addr));
+
     for (const factoryAddr of config.factories) {
-      try {
-        const factory = new ethers.Contract(
-          factoryAddr,
-          FACTORY_ABI,
-          provider
-        );
-        const pairAddr = await factory.getPair(tokenAddress, stablecoinAddr);
+      const factory = new ethers.Contract(factoryAddr, FACTORY_ABI, provider);
+      
+      for (const targetStable of STABLECOINS) {
+        if (tokenAddress.toLowerCase() === targetStable.toLowerCase()) continue;
 
-        if (pairAddr !== ethers.constants.AddressZero) {
-          const pair = new ethers.Contract(pairAddr, PAIR_ABI, provider);
-          const [reserve0, reserve1] = await pair.getReserves();
-          const token0 = await pair.token0();
+        try {
+          const pairAddr = await factory.getPair(tokenAddress, targetStable);
 
-          // Calculate price based on which token is in which reserve
-          const isToken0 = token0.toLowerCase() === tokenAddress.toLowerCase();
-          const tokenReserve = isToken0 ? reserve0 : reserve1;
-          const stableReserve = isToken0 ? reserve1 : reserve0;
+          if (pairAddr !== ethers.constants.AddressZero) {
+            const pair = new ethers.Contract(pairAddr, PAIR_ABI, provider);
+            const [reserve0, reserve1] = await pair.getReserves();
+            
+            if (reserve0.isZero() || reserve1.isZero()) continue;
 
-          // Get decimals for proper calculation
-          const tokenContract = new ethers.Contract(
-            tokenAddress,
-            ERC20_ABI,
-            provider
-          );
-          const tokenDecimals = await tokenContract.decimals();
+            const token0 = await pair.token0();
+            const isToken0 = token0.toLowerCase() === tokenAddress.toLowerCase();
+            const tokenReserve = isToken0 ? reserve0 : reserve1;
+            const stableReserve = isToken0 ? reserve1 : reserve0;
 
-          const price =
-            parseFloat(ethers.utils.formatUnits(stableReserve, 6)) /
-            parseFloat(ethers.utils.formatUnits(tokenReserve, tokenDecimals));
+            const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+            const stableContract = new ethers.Contract(targetStable, ERC20_ABI, provider);
+            
+            const [tokenDecimals, stableDecimals] = await Promise.all([
+              tokenContract.decimals(),
+              stableContract.decimals()
+            ]);
 
-          return Math.max(0, price); // Prevent negative prices
+            let priceInStable =
+              parseFloat(ethers.utils.formatUnits(stableReserve, stableDecimals)) /
+              parseFloat(ethers.utils.formatUnits(tokenReserve, tokenDecimals));
+
+            // If we paired with WETH, we need to convert WETH price to USDC
+            if (targetStable.toLowerCase() === config.wethAddr.toLowerCase()) {
+              const wethPrice = await fetchTokenPriceFromDex(config.wethAddr, chainId, true);
+              if (wethPrice) priceInStable *= wethPrice;
+            }
+
+            return Math.max(0, priceInStable);
+          }
+        } catch (e) {
+          continue;
         }
-      } catch (e) {
-        // Try next factory
-        continue;
       }
     }
 
