@@ -254,7 +254,7 @@ export function TokenInput({
     let changed = false;
     suggestions.forEach(({ token }) => {
       const tokenChainId = (token as ExtendedToken).chainId || chainId;
-      const cacheKey = `${tokenChainId}-${token.address.toLowerCase()}`;
+      const cacheKey = `${tokenChainId || chainId}-${token.address.toLowerCase()}`;
       
       if (!newIcons.has(cacheKey)) {
         newIcons.set(cacheKey, getTokenLogoUrl(token, tokenChainId));

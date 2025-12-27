@@ -41,7 +41,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
 
     suggestions.forEach(({ token }) => {
       const tokenChainId = (token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
-      const cacheKey = `${tokenChainId}-${token.address}`;
+      const cacheKey = `${tokenChainId}-${token.address.toLowerCase()}`;
       
       if (!suggestionIcons.has(cacheKey)) {
         setSuggestionIcons((prev) => new Map(prev).set(cacheKey, getTokenLogoUrl(token, tokenChainId)));
@@ -348,7 +348,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
                 >
                   <div className="suggestion-left">
                     <img 
-                      src={suggestionIcons.get(`${tokenChainId || (chain === 'ETH' ? 1 : 137)}-${token.address}`) || getPlaceholderImage()} 
+                      src={suggestionIcons.get(`${tokenChainId || (chain === 'ETH' ? 1 : 137)}-${token.address.toLowerCase()}`) || getPlaceholderImage()} 
                       alt={token.symbol}
                       style={{ width: '28px', height: '28px', borderRadius: '50%' }}
                       onError={(e) => {
