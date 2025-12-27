@@ -470,7 +470,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // Try Trust Wallet first
       const trustWalletUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${addr}/logo.png`;
       try {
-        const response = await fetch(trustWalletUrl, { method: 'HEAD', timeout: 3000 });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch(trustWalletUrl, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeoutId);
         if (response.ok) {
           iconCache.set(cacheKey, { url: trustWalletUrl, expires: Date.now() + ICON_CACHE_TTL });
           return trustWalletUrl;
@@ -498,7 +501,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // Try GeckoTerminal
       const geckoTerminalUrl = `https://assets.geckoterminal.com/networks/${cid === 1 ? 'ethereum' : 'polygon'}/tokens/${addr}/thumb.png`;
       try {
-        const response = await fetch(geckoTerminalUrl, { method: 'HEAD', timeout: 3000 });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch(geckoTerminalUrl, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeoutId);
         if (response.ok) {
           iconCache.set(cacheKey, { url: geckoTerminalUrl, expires: Date.now() + ICON_CACHE_TTL });
           return geckoTerminalUrl;
@@ -510,7 +516,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       // Try DEXScreener
       const dexscreenerUrl = `https://dexscreener.com/images/defiplated.png`;
       try {
-        const response = await fetch(dexscreenerUrl, { method: 'HEAD', timeout: 3000 });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch(dexscreenerUrl, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeoutId);
         if (response.ok) {
           iconCache.set(cacheKey, { url: dexscreenerUrl, expires: Date.now() + ICON_CACHE_TTL });
           return dexscreenerUrl;
