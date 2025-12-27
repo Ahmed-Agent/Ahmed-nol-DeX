@@ -728,6 +728,14 @@ export default function Home() {
         const explorerUrl = effectiveChain === 'ETH' ? ethereumConfig.explorerUrl : config.explorerUrl;
         showToast(`${isBridge ? 'Bridge' : 'Swap'} successful! ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`, { type: 'success', ttl: 8000 });
         
+        // Trigger celebration animation
+        confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#7013ff', '#b444ff', '#ffffff']
+        });
+
         setFromAmount('');
         setToAmount('');
         await fetchPrices();
