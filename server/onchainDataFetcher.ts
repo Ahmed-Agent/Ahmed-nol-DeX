@@ -108,6 +108,19 @@ const dataCache = new Map<
 >();
 const CACHE_TTL = 65 * 60 * 1000; // 1 hour 5 minutes
 
+/**
+ * Get cached data if available, otherwise return null
+ * This ensures late subscribers can get the last hour's analytics immediately
+ */
+export function getCachedOnChainData(address: string, chainId: number): OnChainData | null {
+  const cacheKey = `${chainId}-${address.toLowerCase()}`;
+  const cached = dataCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
 // Single-flight locks to prevent thundering herd
 const fetchingLocks = new Map<string, Promise<OnChainData | null>>();
 
