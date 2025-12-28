@@ -242,35 +242,35 @@ async function fetchTokenPriceFromDex(
   chainId: number,
   isInternalWethCall: boolean = false
 ): Promise<number | null> {
-  const { getCachedPool, cachePool, getFactoryPriority, isPoolCacheHot } = await import("./poolCacheManager");
+  const { getCachedPool, cachePool, getFactoryPriority } = await import("./poolCacheManager");
   
-  // Check if we are fetching price for WETH/MATIC itself to avoid infinite recursion
   const config = CHAIN_CONFIG[chainId];
-  if (config && tokenAddr.toLowerCase() === config.wethAddr.toLowerCase() && isInternalWethCall) {
-     // If we are here, we are trying to find WETH price to price another token, 
-     // but we should use a direct stable pair for WETH instead of recursive call.
-     // We'll proceed but skip the recursion in the factory loop.
+  if (!config) {
+    console.error(`[OnChainFetcher] No config for chain ${chainId}`);
+    return null;
   }
+
+  // CRITICAL: Detect native coins FIRST
+  const isNativeETH = chainId === 1 && tokenAddr.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+  const isNativePolygon = chainId === 137 && (
+    tokenAddr.toLowerCase() === "0x0000000000000000000000000000000000001010" || 
+    tokenAddr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  );
 
   let retries = 2;
   while (retries > 0) {
     try {
-      if (!config) return null;
-
       const provider = await getProvider(chainId);
       const tokenAddress = ethers.utils.getAddress(tokenAddr);
 
-      // Specific handling for Native POL/MATIC on Polygon (0x0000...1010)
-      // Uniswap V3 often has the best liquidity for this.
-      const isPolygonNative = chainId === 137 && (
-        tokenAddr.toLowerCase() === "0x0000000000000000000000000000000000001010" || 
-        tokenAddr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-      );
-
       // Try Uniswap V3 first as it often has better liquidity for major tokens
-      if (!isInternalWethCall || isPolygonNative) {
+      // Always try V3 for native coins since they usually have best liquidity there
+      if (!isInternalWethCall || isNativePolygon) {
         const v3Price = await fetchTokenPriceFromV3(tokenAddress, chainId, provider);
-        if (v3Price) return v3Price;
+        if (v3Price) {
+          console.log(`[OnChainFetcher] Got V3 price for ${tokenAddr}: $${v3Price.toFixed(4)}`);
+          return v3Price;
+        }
       }
 
       // Try all V2-style factories
@@ -322,91 +322,116 @@ async function fetchTokenPriceFromDex(
               let pairAddr: string;
               
               if (cachedPool) {
-                // Use cached pool if available and hot
+                // Use cached pool if available
                 pairAddr = cachedPool.poolAddress;
-                console.log(`[PoolCache] Using cached pool: ${pairAddr}`);
               } else {
                 // Discover new pool
                 pairAddr = await factory.getPair(tokenAddress, targetStable);
               }
 
-              if (pairAddr !== ethers.constants.AddressZero) {
-                const pair = new ethers.Contract(pairAddr, PAIR_ABI, provider);
-                const [reserve0, reserve1] = await pair.getReserves();
-                
-                if (reserve0.isZero() || reserve1.isZero()) continue;
+              if (pairAddr === ethers.constants.AddressZero) continue;
 
-                const token0 = await pair.token0();
-                const isToken0 = token0.toLowerCase() === tokenAddress.toLowerCase();
-                const tokenReserve = isToken0 ? reserve0 : reserve1;
-                const stableReserve = isToken0 ? reserve1 : reserve0;
-
-                const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
-                const stableContract = new ethers.Contract(targetStable, ERC20_ABI, provider);
-                
-                const [tokenDecimals, stableDecimals] = await Promise.all([
-                  tokenContract.decimals().catch(() => 18),
-                  stableContract.decimals().catch(() => 18)
-                ]);
-
-                const tokenUnits = parseFloat(ethers.utils.formatUnits(tokenReserve, tokenDecimals));
-                const stableUnits = parseFloat(ethers.utils.formatUnits(stableReserve, stableDecimals));
-                
-                if (tokenUnits === 0) continue;
-                
-                let priceInStable = stableUnits / tokenUnits;
-
-                // If we paired with WETH, we need to convert WETH price to USDC
-                if (targetStable.toLowerCase() === config.wethAddr.toLowerCase() || 
-                    targetStable.toLowerCase() === "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619".toLowerCase() ||
-                    targetStable.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2".toLowerCase()) {
-                  
-                  // Avoid recursive WETH calls if we are already in one
-                  if (tokenAddress.toLowerCase() === config.wethAddr.toLowerCase()) {
-                    // We are looking for WETH price, and we found a WETH pair? Skip.
-                    continue;
-                  }
-
-                  const wethPrice = await fetchTokenPriceFromDex(targetStable, chainId, true);
-                  if (wethPrice) priceInStable *= wethPrice;
+              const pair = new ethers.Contract(pairAddr, PAIR_ABI, provider);
+              const [reserve0, reserve1] = await pair.getReserves();
+              
+              // CRITICAL: Validate reserves exist before using cached pool
+              if (reserve0.isZero() || reserve1.isZero()) {
+                if (cachedPool) {
+                  console.warn(`[OnChainFetcher] Cached pool ${pairAddr} has zero reserves, skipping`);
                 }
+                continue;
+              }
 
-                if (priceInStable > 0) {
-                  const currentLiquidity = stableReserve;
-                  if (currentLiquidity.gt(maxLiquidity)) {
-                    maxLiquidity = currentLiquidity;
-                    bestPrice = priceInStable;
-                    
-                    // Cache this pool if it's the best we found
-                    if (!cachedPool && factoryIdx < primary.length) {
-                      const dexName = factoryIdx === 0 ? (chainId === 1 ? 'Uniswap V2' : 'QuickSwap') : 'SushiSwap';
-                      cachePool(tokenAddress, targetStable, chainId, pairAddr, factoryIdx, dexName);
-                      foundReliablePool = true;
-                    }
+              const token0 = await pair.token0();
+              const isToken0 = token0.toLowerCase() === tokenAddress.toLowerCase();
+              const tokenReserve = isToken0 ? reserve0 : reserve1;
+              const stableReserve = isToken0 ? reserve1 : reserve0;
+
+              // Get decimals safely - use defaults for native coins
+              let tokenDecimals = 18;
+              let stableDecimals = 18;
+              
+              try {
+                const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+                tokenDecimals = await tokenContract.decimals();
+              } catch (e) {
+                // Native coins will fail, use default 18
+                console.debug(`[OnChainFetcher] Could not get decimals for ${tokenAddress}, using 18`);
+              }
+              
+              try {
+                const stableContract = new ethers.Contract(targetStable, ERC20_ABI, provider);
+                stableDecimals = await stableContract.decimals();
+              } catch (e) {
+                // Fallback decimals for known stables
+                if (targetStable.toLowerCase() === "0x2791bca1f2de4661ed88a30c99a7a9449aa84174" ||
+                    targetStable.toLowerCase() === "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") {
+                  stableDecimals = 6; // USDC
+                } else if (targetStable.toLowerCase() === "0xdac17f958d2ee523a2206206994597c13d831ec7" ||
+                           targetStable.toLowerCase() === "0xc2132d05d31c914a87c6611c10748aeb04b58e8f") {
+                  stableDecimals = 6; // USDT
+                }
+              }
+
+              const tokenUnits = parseFloat(ethers.utils.formatUnits(tokenReserve, tokenDecimals));
+              const stableUnits = parseFloat(ethers.utils.formatUnits(stableReserve, stableDecimals));
+              
+              if (tokenUnits <= 0 || stableUnits <= 0) {
+                console.debug(`[OnChainFetcher] Invalid units for pair ${pairAddr}`);
+                continue;
+              }
+              
+              let priceInStable = stableUnits / tokenUnits;
+
+              // If we paired with WETH, we need to convert WETH price to USDC
+              const needsWethConversion = targetStable.toLowerCase() === config.wethAddr.toLowerCase() || 
+                    targetStable.toLowerCase() === "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619".toLowerCase() ||
+                    targetStable.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2".toLowerCase();
+              
+              if (needsWethConversion && tokenAddress.toLowerCase() !== config.wethAddr.toLowerCase()) {
+                const wethPrice = await fetchTokenPriceFromDex(targetStable, chainId, true);
+                if (wethPrice) {
+                  priceInStable *= wethPrice;
+                }
+              }
+
+              if (priceInStable > 0) {
+                const currentLiquidity = stableReserve;
+                if (currentLiquidity.gt(maxLiquidity)) {
+                  maxLiquidity = currentLiquidity;
+                  bestPrice = priceInStable;
+                  
+                  // Cache this pool if it's the best we found from primary DEX
+                  if (!cachedPool && factoryIdx < primary.length) {
+                    const dexName = factoryIdx === 0 ? (chainId === 1 ? 'Uniswap V2' : 'QuickSwap') : 'SushiSwap';
+                    cachePool(tokenAddress, targetStable, chainId, pairAddr, factoryIdx, dexName);
+                    foundReliablePool = true;
                   }
                 }
               }
             } catch (e) {
+              console.debug(`[OnChainFetcher] Error with pair for ${tokenAddr}:`, e instanceof Error ? e.message : e);
               continue;
             }
           }
 
           // If we found a reliable pool from primary DEX, skip other factories
           if (foundReliablePool && factoryIdx < primary.length) {
-            console.log(`[PoolCache] Found reliable pool from primary DEX, skipping remaining factories`);
             break;
           }
         } catch (e) {
+          console.debug(`[OnChainFetcher] Error with factory ${factoryAddr}:`, e instanceof Error ? e.message : e);
           continue;
         }
       }
       if (bestPrice) return bestPrice;
     } catch (e) {
-      console.error(`[OnChainFetcher] Price fetch error for ${tokenAddr} (Retries left: ${retries}):`, e);
+      console.error(`[OnChainFetcher] Major error for ${tokenAddr} on chain ${chainId}:`, e instanceof Error ? e.message : e);
     }
     retries--;
     if (retries > 0) await new Promise(resolve => setTimeout(resolve, 1000));
   }
+  console.warn(`[OnChainFetcher] Could not fetch price for ${tokenAddr} on chain ${chainId}`);
   return null;
 }
 
@@ -422,6 +447,20 @@ async function fetchMarketCap(
     const config = CHAIN_CONFIG[chainId];
     if (!config || price <= 0) return 0;
 
+    // Handle native coins - they don't have ERC20 contracts
+    const isNativeETH = chainId === 1 && tokenAddr.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+    const isNativePolygon = chainId === 137 && (
+      tokenAddr.toLowerCase() === "0x0000000000000000000000000000000000001010" ||
+      tokenAddr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    );
+
+    if (isNativeETH || isNativePolygon) {
+      // Native coins: use approximate circulating supply
+      // ETH: ~120M, Polygon: ~10B
+      const approxSupply = isNativeETH ? 120000000 : 10000000000;
+      return approxSupply * price;
+    }
+
     const provider = await getProvider(chainId);
     const contract = new ethers.Contract(tokenAddr, ERC20_ABI, provider);
 
@@ -435,7 +474,7 @@ async function fetchMarketCap(
 
     return Math.max(0, marketCap);
   } catch (e) {
-    console.error(`[OnChainFetcher] Market cap fetch error:`, e);
+    console.error(`[OnChainFetcher] Market cap fetch error for ${tokenAddr}:`, e);
     return 0;
   }
 }
