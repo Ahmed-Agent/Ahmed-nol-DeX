@@ -197,7 +197,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
     };
   }, [showSuggestions]);
 
-  // Watcher for dropdown tokens visibility and selection
+  // Watcher for dropdown tokens visibility and selection - OPTIMIZED for persistent subscriptions
   useEffect(() => {
     if (!showSuggestions || suggestions.length === 0) {
       // Unsubscribe all when dropdown closes
@@ -208,13 +208,14 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
 
     connectPriceService();
     
-    // Set of current tokens in suggestions to keep track of changes
+    // Set of current tokens in suggestions - track all visible tokens
     const currentTokenKeys = new Set(suggestions.map(({ token }) => {
       const tokenChainId = (token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
       return `${tokenChainId}-${token.address.toLowerCase()}`;
     }));
 
-    // Cleanup unsubscribers for tokens no longer in suggestions
+    // SMART CLEANUP: Only unsubscribe tokens that have been completely removed from suggestions
+    // Don't unsubscribe on re-renders if token is still in suggestions (even if position changed)
     unsubscribersRef.current.forEach((unsub, key) => {
       if (!currentTokenKeys.has(key)) {
         unsub();
@@ -223,10 +224,12 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
     });
 
     // Subscribe to all tokens currently in suggestions
+    // OPTIMIZATION: Skip if already subscribed to avoid duplicate subscriptions
     suggestions.forEach(({ token }) => {
       const tokenChainId = (token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
       const subKey = `${tokenChainId}-${token.address.toLowerCase()}`;
       
+      // Only subscribe if not already active - preserves existing subscription
       if (!unsubscribersRef.current.has(subKey)) {
         // Fetch cached price immediately
         fetch(`/api/prices/onchain?address=${token.address}&chainId=${tokenChainId}`)
@@ -255,7 +258,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
     });
 
     return () => {
-      // Don't clear all on every dependency change, only on unmount or close handled above
+      // Cleanup handled above - don't double-unsubscribe
     };
   }, [showSuggestions, suggestions, chain]);
 

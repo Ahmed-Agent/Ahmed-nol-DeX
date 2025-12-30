@@ -252,18 +252,27 @@ async function fetchTokenPriceFromDex(
     return null;
   }
 
+  // CRITICAL: Normalize address first - fix checksum issues
+  let normalizedAddr: string;
+  try {
+    normalizedAddr = ethers.utils.getAddress(tokenAddr);
+  } catch (e) {
+    console.warn(`[OnChainFetcher] Invalid address ${tokenAddr}: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+
   // CRITICAL: Detect native coins FIRST and convert to wrapped version
-  const isNativeETH = chainId === 1 && tokenAddr.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+  const isNativeETH = chainId === 1 && normalizedAddr.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
   const isNativePolygon = chainId === 137 && (
-    tokenAddr.toLowerCase() === "0x0000000000000000000000000000000000001010" || 
-    tokenAddr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    normalizedAddr.toLowerCase() === "0x0000000000000000000000000000000000001010" || 
+    normalizedAddr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
   );
   
   // CRITICAL FIX: For Polygon native coin (POL), use WMATIC for pricing
-  let effectiveTokenAddr = tokenAddr;
+  let effectiveTokenAddr = normalizedAddr;
   if (isNativePolygon && config.wmaticAddr) {
-    console.log(`[OnChainFetcher] Converting Polygon native to WMATIC for pricing: ${tokenAddr} -> ${config.wmaticAddr}`);
-    effectiveTokenAddr = config.wmaticAddr;
+    console.log(`[OnChainFetcher] Converting Polygon native to WMATIC for pricing: ${normalizedAddr} -> ${config.wmaticAddr}`);
+    effectiveTokenAddr = ethers.utils.getAddress(config.wmaticAddr);
   }
 
   let retries = 2;
