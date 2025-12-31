@@ -315,7 +315,8 @@ export function TokenInput({
       if (!unsubscribersRef.current.has(subKey)) {
         const unsubscribe = subscribeToPrice(token.address, tokenChainId, (priceData) => {
           setSuggestions(prev => prev.map(item => {
-            if (item.token.address.toLowerCase() === token.address.toLowerCase()) {
+            const itemChainId = (item.token as ExtendedToken).chainId || chainId;
+            if (item.token.address.toLowerCase() === token.address.toLowerCase() && itemChainId === tokenChainId) {
               return { ...item, token: { ...item.token, currentPrice: priceData.price }, price: priceData.price };
             }
             return item;
@@ -335,7 +336,7 @@ export function TokenInput({
 
     if (showSuggestions) {
       document.addEventListener('mousedown', handleClickOutside);
-      document.body.style.overflow = 'hidden';
+      // Removed overflow hidden as it can interfere with fixed/sticky positioning in some layouts
     } else {
       document.body.style.overflow = '';
     }
@@ -362,7 +363,7 @@ export function TokenInput({
   const change = stats?.change;
 
   return (
-    <div className="input-box" style={{ position: 'relative' }} ref={containerRef} data-testid={`input-box-${side}`}>
+    <div className="input-box" style={{ position: 'relative', zIndex: 100 }} ref={containerRef} data-testid={`input-box-${side}`}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
         {/* Merged ticker + icon chip input - single unified input field */}
         <div style={{
@@ -398,7 +399,6 @@ export function TokenInput({
             onChange={handleInputChange}
             onFocus={handleFocus}
             onClick={handleInputClick}
-            onBlur={handleBlur}
             style={{
               padding: '10px 8px',
               borderRadius: '0px',
@@ -460,6 +460,7 @@ export function TokenInput({
           ref={suggestionsRef}
           className="suggestions show"
           data-testid={`suggestions-${side}`}
+          style={{ zIndex: 101 }}
         >
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' }}>

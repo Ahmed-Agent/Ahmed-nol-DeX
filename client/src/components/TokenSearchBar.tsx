@@ -186,7 +186,8 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
 
     if (showSuggestions) {
       document.addEventListener('mousedown', handleClickOutside);
-      document.body.style.overflow = 'hidden';
+      // Removed overflow hidden as it can interfere with fixed/sticky positioning in some layouts
+      // and cause layout shifts
     } else {
       document.body.style.overflow = '';
     }
@@ -234,7 +235,8 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
           .then((priceData: OnChainPrice | null) => {
             if (!priceData || priceData.price === undefined) return;
             setSuggestions(prev => prev.map(item => {
-              if (item.token.address.toLowerCase() === token.address.toLowerCase()) {
+              const itemChainId = (item.token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
+              if (item.token.address.toLowerCase() === token.address.toLowerCase() && itemChainId === tokenChainId) {
                 return { ...item, token: { ...item.token, currentPrice: priceData.price }, price: priceData.price };
               }
               return item;
@@ -244,7 +246,8 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
         const unsubscribe = subscribeToPrice(token.address, tokenChainId, (priceData) => {
           if (!priceData || priceData.price === undefined) return;
           setSuggestions(prev => prev.map(item => {
-            if (item.token.address.toLowerCase() === token.address.toLowerCase()) {
+            const itemChainId = (item.token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137);
+            if (item.token.address.toLowerCase() === token.address.toLowerCase() && itemChainId === tokenChainId) {
               return { ...item, token: { ...item.token, currentPrice: priceData.price }, price: priceData.price };
             }
             return item;
@@ -268,7 +271,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
   }, []);
 
   return (
-    <div className="token-search-bar-container" ref={containerRef}>
+    <div className="token-search-bar-container" ref={containerRef} style={{ position: 'relative', zIndex: 1000 }}>
       <input
         ref={inputRef}
         type="text"
@@ -281,7 +284,7 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
       />
 
       {showSuggestions && (
-        <div ref={suggestionsRef} className="token-search-suggestions">
+        <div ref={suggestionsRef} className="token-search-suggestions" style={{ zIndex: 1001 }}>
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' }}>
               {[...Array(3)].map((_, i) => (
