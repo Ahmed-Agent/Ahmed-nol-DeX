@@ -332,18 +332,36 @@ async function fetchTokenPriceFromDex(
         try {
           const factory = new ethers.Contract(factoryAddr, FACTORY_ABI, provider);
           
-      for (const targetStable of STABLECOINS) {
-        if (tokenAddress.toLowerCase() === targetStable.toLowerCase()) continue;
+          for (const targetStable of STABLECOINS) {
+            if (tokenAddress.toLowerCase() === targetStable.toLowerCase()) continue;
 
-        let checksumStable: string;
-        try {
-          checksumStable = ethers.utils.getAddress(targetStable);
-        } catch (e) {
-          continue;
-        }
+            let checksumStable: string;
+            try {
+              checksumStable = ethers.utils.getAddress(targetStable);
+            } catch (e) {
+              continue;
+            }
 
-        // Check if we have a cached pool for this pair
-        const cachedPool = getCachedPool(tokenAddress, checksumStable, chainId);
+            // CRITICAL: Ensure stablecoin belongs to the current chain's config or is a cross-chain fallback
+            // This prevents trying to look up Ethereum-only stables on Polygon and vice versa
+            const isChainStable = targetStable.toLowerCase() === config.usdcAddr.toLowerCase() || 
+                                targetStable.toLowerCase() === config.usdtAddr.toLowerCase() ||
+                                targetStable.toLowerCase() === config.wethAddr.toLowerCase() ||
+                                (config.wmaticAddr && targetStable.toLowerCase() === config.wmaticAddr.toLowerCase());
+            
+            // If not a primary chain stable, only try if it's a known liquid fallback for this chain
+            if (!isChainStable && chainId === 137) {
+              // Polygon specific liquid stables
+              const polyStables = ["0x2791bca1f2de4661ed88a30c99a7a9449aa84174", "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063", "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619", "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"];
+              if (!polyStables.includes(targetStable.toLowerCase())) continue;
+            } else if (!isChainStable && chainId === 1) {
+              // Ethereum specific liquid stables
+              const ethStables = ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "0xdac17f958d2ee523a2206206994597c13d831ec7", "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "0x6b175474e89094c44da98b954eedeac495271d0f", "0x853d955acef822db058eb8505911ed77f175b99e"];
+              if (!ethStables.includes(targetStable.toLowerCase())) continue;
+            }
+
+            // Check if we have a cached pool for this pair
+            const cachedPool = getCachedPool(tokenAddress, checksumStable, chainId);
         
         try {
           let pairAddr: string;
@@ -475,10 +493,11 @@ async function fetchMarketCap(
     if (!config || price <= 0) return 0;
 
     // Handle native coins - they don't have ERC20 contracts
-    const isNativeETH = chainId === 1 && tokenAddr.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+    const isNativeETH = chainId === 1 && (tokenAddr.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2" || tokenAddr.toLowerCase() === "0x0000000000000000000000000000000000000000" || tokenAddr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
     const isNativePolygon = chainId === 137 && (
       tokenAddr.toLowerCase() === "0x0000000000000000000000000000000000001010" ||
-      tokenAddr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      tokenAddr.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
+      tokenAddr.toLowerCase() === "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"
     );
 
     if (isNativeETH || isNativePolygon) {
