@@ -270,15 +270,26 @@ async function fetchTokenPriceFromDex(
   while (retries > 0) {
     try {
       const provider = await getProvider(chainId);
-      const tokenAddress = ethers.utils.getAddress(effectiveTokenAddr);
+      let checksumAddress: string;
+      try {
+        checksumAddress = ethers.utils.getAddress(effectiveTokenAddr);
+      } catch (e) {
+        console.warn(`[OnChainFetcher] Invalid address format: ${effectiveTokenAddr}`);
+        return null;
+      }
+      const tokenAddress = checksumAddress;
 
       // Try Uniswap V3 first as it often has better liquidity for major tokens
       // Always try V3 for native coins since they usually have best liquidity there
       if (!isInternalWethCall || isNativePolygon) {
-        const v3Price = await fetchTokenPriceFromV3(tokenAddress, chainId, provider);
-        if (v3Price) {
-          console.log(`[OnChainFetcher] Got V3 price for ${tokenAddr}: $${v3Price.toFixed(4)}`);
-          return v3Price;
+        try {
+          const v3Price = await fetchTokenPriceFromV3(tokenAddress, chainId, provider);
+          if (v3Price) {
+            console.log(`[OnChainFetcher] Got V3 price for ${tokenAddr}: $${v3Price.toFixed(4)}`);
+            return v3Price;
+          }
+        } catch (v3Error) {
+          console.debug(`[OnChainFetcher] V3 price fetch failed for ${tokenAddr}:`, v3Error instanceof Error ? v3Error.message : v3Error);
         }
       }
 
@@ -321,22 +332,29 @@ async function fetchTokenPriceFromDex(
         try {
           const factory = new ethers.Contract(factoryAddr, FACTORY_ABI, provider);
           
-          for (const targetStable of STABLECOINS) {
-            if (tokenAddress.toLowerCase() === targetStable.toLowerCase()) continue;
+      for (const targetStable of STABLECOINS) {
+        if (tokenAddress.toLowerCase() === targetStable.toLowerCase()) continue;
 
-            // Check if we have a cached pool for this pair
-            const cachedPool = getCachedPool(tokenAddress, targetStable, chainId);
-            
-            try {
-              let pairAddr: string;
-              
-              if (cachedPool) {
-                // Use cached pool if available
-                pairAddr = cachedPool.poolAddress;
-              } else {
-                // Discover new pool
-                pairAddr = await factory.getPair(tokenAddress, targetStable);
-              }
+        let checksumStable: string;
+        try {
+          checksumStable = ethers.utils.getAddress(targetStable);
+        } catch (e) {
+          continue;
+        }
+
+        // Check if we have a cached pool for this pair
+        const cachedPool = getCachedPool(tokenAddress, checksumStable, chainId);
+        
+        try {
+          let pairAddr: string;
+          
+          if (cachedPool) {
+            // Use cached pool if available
+            pairAddr = cachedPool.poolAddress;
+          } else {
+            // Discover new pool
+            pairAddr = await factory.getPair(tokenAddress, checksumStable);
+          }
 
               if (pairAddr === ethers.constants.AddressZero) continue;
 
