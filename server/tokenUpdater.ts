@@ -1,8 +1,11 @@
 import fs from "fs";
 import path from "path";
 
-// Token updates are triggered only when users add new tokens
-// This keeps tokens.json in sync with dynamically added tokens
+/**
+ * Single source of truth for tokens
+ * This file is dynamically updated when users search for new addresses
+ * Prices are fetched ON-CHAIN and cached for 1 minute
+ */
 export function ensureTokenListExists() {
   const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
   
@@ -18,6 +21,33 @@ export function ensureTokenListExists() {
       ]
     };
     fs.writeFileSync(tokensPath, JSON.stringify(defaultTokens, null, 2));
-    console.log("[TokenUpdater] Created default tokens.json");
+    console.log("[TokenUpdater] Created consolidated tokens.json");
   }
+}
+
+export function addTokenToList(chainId: number, token: { address: string; symbol: string; name: string; decimals: number }) {
+  const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
+  try {
+    const tokens = JSON.parse(fs.readFileSync(tokensPath, "utf-8"));
+    const chainKey = chainId === 1 ? "ethereum" : "polygon";
+    
+    if (!tokens[chainKey]) tokens[chainKey] = [];
+    
+    const exists = tokens[chainKey].find((t: any) => t.address.toLowerCase() === token.address.toLowerCase());
+    if (!exists) {
+      tokens[chainKey].push({
+        address: token.address.toLowerCase(),
+        symbol: token.symbol,
+        name: token.name,
+        decimals: token.decimals,
+        logoURI: ""
+      });
+      fs.writeFileSync(tokensPath, JSON.stringify(tokens, null, 2));
+      console.log(`[TokenUpdater] Added new token ${token.symbol} to ${chainKey} list`);
+      return true;
+    }
+  } catch (e) {
+    console.error("[TokenUpdater] Error adding token:", e);
+  }
+  return false;
 }

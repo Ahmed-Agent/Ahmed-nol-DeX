@@ -16,7 +16,7 @@ let pendingTokensAdded = false;
 const TOKEN_REFRESH_TTL = 5000; // 5 seconds
 let tokenRefreshClients: Set<WebSocket> = new Set();
 
-const ERC20_ABI = ["function decimals() view returns (uint8)", "function symbol() view returns (string)"];
+const ERC20_ABI = ["function decimals() view returns (uint8)", "function symbol() view returns (string)", "function name() view returns (string)"];
 const PAIR_ABI = [
   "function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
   "function token0() view returns (address)",
@@ -221,6 +221,7 @@ async function getOnChainAnalytics(address: string, chainId: number): Promise<On
 function reloadAllTokensForWatching() {
   try {
     const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
+    if (!fs.existsSync(tokensPath)) return;
     const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
     const prevSize = watchedTokens.size;
     let newTokensAdded = 0;
@@ -594,32 +595,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(analytics || {});
   });
 
-  // CRITICAL: Fetch decimals ONCE from Etherscan/Polygonscan API and cache forever
-  // Never fetch decimals again after initial fetch - use cached value always
-  async function fetchDecimalsFromScan(address: string, chainId: number): Promise<number | null> {
-    const config = CHAIN_CONFIG[chainId];
-    if (!config || !config.scanKey) {
-      console.warn(`[TokenSearch] VITE_ETH_POL_API not configured - cannot fetch decimals from scan`);
-      return null;
-    }
-    
+  app.get("/api/tokens/list", (req, res) => {
+    const { chainId } = req.query;
+    const cid = Number(chainId);
     try {
-      const url = `${config.scanApi}?module=account&action=tokenlist&address=${address}&apikey=${config.scanKey}`;
-      const response = await fetch(url);
-      if (!response.ok) return null;
-      
-      const data = await response.json();
-      if (data.status === "1" && data.result && Array.isArray(data.result) && data.result.length > 0) {
-        const token = data.result[0];
-        const decimals = Number(token.decimals);
-        console.log(`[TokenSearch] Fetched decimals from scan: ${address} = ${decimals}`);
-        return decimals;
-      }
+      const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
+      if (!fs.existsSync(tokensPath)) return res.json([]);
+      const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
+      const chainKey = cid === 1 ? 'ethereum' : 'polygon';
+      res.json(tokensData[chainKey] || []);
     } catch (e) {
-      console.error(`[TokenSearch] Error fetching from scan API:`, e);
+      res.status(500).send("Error reading tokens");
     }
-    return null;
-  }
+  });
 
   app.get("/api/tokens/search", async (req, res) => {
     const { address, chainId } = req.query;
@@ -634,316 +622,114 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       // Check if token already exists in tokens.json with cached decimals
       const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
-      const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
-      const chainKey = cid === 1 ? 'ethereum' : 'polygon';
-      const tokensList = tokensData[chainKey] || [];
-      
-      const existingToken = tokensList.find((t: any) => t.address.toLowerCase() === addr);
-      
-      if (existingToken && existingToken.decimals !== undefined && existingToken.decimals !== null) {
-        // CACHED: Token exists with decimals - use cached value, NEVER refetch
-        console.log(`[TokenSearch] Using CACHED decimals for ${existingToken.symbol}: ${existingToken.decimals}`);
-        return res.json({ 
-          address: addr, 
-          symbol: existingToken.symbol, 
-          decimals: existingToken.decimals, 
-          name: existingToken.name 
-        });
+      if (fs.existsSync(tokensPath)) {
+        const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
+        const chainKey = cid === 1 ? 'ethereum' : 'polygon';
+        const tokensList = tokensData[chainKey] || [];
+        
+        const existingToken = tokensList.find((t: any) => t.address.toLowerCase() === addr);
+        
+        if (existingToken && existingToken.decimals !== undefined && existingToken.decimals !== null) {
+          console.log(`[TokenSearch] Using CACHED decimals for ${existingToken.symbol}: ${existingToken.decimals}`);
+          return res.json({ 
+            address: addr, 
+            symbol: existingToken.symbol, 
+            decimals: existingToken.decimals, 
+            name: existingToken.name 
+          });
+        }
       }
       
-      // Token doesn't exist or missing decimals - fetch from contract for symbol
+      // Token doesn't exist or missing decimals - fetch from contract
       const provider = new ethers.providers.JsonRpcProvider(config.rpc);
       const contract = new ethers.Contract(addr, ERC20_ABI, provider);
-      let symbol: string;
-      let decimals: number;
       
-      try {
-        symbol = await contract.symbol();
-      } catch {
-        symbol = "UNKNOWN";
-      }
+      const [decimals, symbol, name] = await Promise.all([
+        contract.decimals().catch(() => 18),
+        contract.symbol().catch(() => "???"),
+        contract.name().catch(() => "Unknown")
+      ]);
       
-      // CRITICAL: Fetch decimals from Etherscan/Polygonscan API first (more reliable)
-      // Only fall back to contract call if API fails
-      let decimalsFromScan = await fetchDecimalsFromScan(addr, cid);
-      if (decimalsFromScan !== null) {
-        decimals = decimalsFromScan;
-      } else {
-        // Fallback: fetch from contract
-        try {
-          decimals = await contract.decimals();
-          console.warn(`[TokenSearch] Fell back to contract call for decimals: ${addr}`);
-        } catch {
-          console.error(`[TokenSearch] Could not fetch decimals for ${addr} - using default 18`);
-          decimals = 18;
-        }
-      }
+      const token = { address: addr, symbol, name, decimals };
       
-      if (!existingToken) {
-        // NEW TOKEN: Add with decimals from Etherscan/Polygonscan or contract fallback
-        // These decimals will be CACHED forever and never refetched
-        const newToken = {
-          address: addr,
-          symbol: symbol.toUpperCase(),
-          name: symbol,
-          marketCap: 0,
-          logoURI: "",
-          decimals: Number(decimals)
-        };
-        
-        // Validate decimals before storing
-        if (Number.isNaN(newToken.decimals) || newToken.decimals < 0 || newToken.decimals > 255) {
-          console.error(`[TokenSearch] CRITICAL: Invalid decimals ${decimals} for token ${symbol} on chain ${cid}`);
-          return res.status(500).send("Invalid token decimals - cannot proceed");
-        }
-        
-        tokensList.push(newToken);
-        tokensData[chainKey] = tokensList;
-        
-        // Write back to file with PERMANENT decimals - NEVER refetch
-        fs.writeFileSync(tokensPath, JSON.stringify(tokensData, null, 2));
-        
-        // Register new token for immediate and hourly refresh
-        scheduleNewTokenRefresh(cid, addr);
-        
-        // Trigger single-flight token refresh to all connected clients
+      // Add to our single source of truth file
+      const { addTokenToList } = await import("./tokenUpdater");
+      const added = addTokenToList(cid, token);
+      
+      if (added) {
         triggerTokenRefresh();
-        
-        const metrics = getMetrics();
-        console.log(`[TokenSearch] ✓ Added new token: ${symbol} (${addr}) chain ${cid} | Decimals: ${decimals} (CACHED FOREVER) | Watched tokens: ${metrics.totalWatchedTokens}`);
       }
       
-      res.json({ address: addr, symbol, decimals, name: symbol });
+      res.json(token);
     } catch (e) {
-      console.error(`[TokenSearch] Error:`, e);
-      res.status(404).send("Token not found on-chain");
+      console.error("[TokenSearch] Error:", e);
+      res.status(500).send("Failed to fetch token metadata");
     }
   });
 
-  app.get("/api/tokens/list", async (req, res) => {
-    const { chainId } = req.query;
-    if (!chainId) return res.status(400).json({ error: "Missing chainId" });
-    
-    const cid = Number(chainId);
-    const chainKey = cid === 1 ? 'ethereum' : 'polygon';
+  app.get("/api/config", (req, res) => {
+    res.json({
+      chainId: 137,
+      chainIdHex: '0x89',
+      chainName: 'Polygon',
+      coingeckoChain: 'polygon-pos',
+      rpcProxyEndpoints: {
+        eth: '/api/proxy/rpc/eth',
+        pol: '/api/proxy/rpc/pol',
+      },
+      oneInchBase: 'https://api.1inch.io/v5.0/137',
+      zeroXBase: 'https://polygon.api.0x.org',
+      usdcAddr: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+      wethAddr: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
+      maticAddr: '0x0000000000000000000000000000000000001010',
+      feePercent: 0.00001,
+      feeRecipient: '',
+      quoteCacheTtl: 10000,
+      priceCacheTtl: 10000,
+      siteName: 'NOLA Exchange',
+      explorerUrl: 'https://polygonscan.com',
+      defaultSlippage: 1,
+      slippageOptions: [0.5, 1, 2, 3],
+      hasCoingeckoKey: !!process.env.COINGECKO_API_KEY,
+      hasCmcKey: !!process.env.CMC_API_KEY,
+      hasZeroXKey: !!process.env.ZEROX_API_KEY,
+      hasLifiKey: !!process.env.VITE_LIFI_API_KEY,
+      hasEthPolApi: !!process.env.VITE_ETH_POL_API,
+      hasCustomEthRpc: !!process.env.VITE_ETH_RPC_URL,
+      hasCustomPolRpc: !!process.env.VITE_POL_RPC_URL,
+      walletConnectProjectId: process.env.VITE_WALLET_CONNECT_PROJECT_ID || '',
+      supabaseUrl: process.env.VITE_SUPABASE_URL || '',
+      supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY || '',
+    });
+  });
+
+  // Proxy for ZeroX API to hide keys
+  app.get("/api/proxy/0x/*", async (req, res) => {
+    const path = req.params[0];
+    const query = new URLSearchParams(req.query as any).toString();
+    const chainId = req.headers['x-chain-id'] || '137';
+    const baseUrl = chainId === '1' ? 'https://api.0x.org' : 'https://polygon.api.0x.org';
+    const url = `${baseUrl}/${path}?${query}`;
     
     try {
-      const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
-      const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
-      const tokensList = tokensData[chainKey] || [];
-      
-      // Return fresh tokens from disk
-      res.json(tokensList);
-    } catch (e) {
-      console.error(`[TokenList] Error reading tokens for chain ${cid}:`, e);
-      res.status(500).json({ error: "Failed to load tokens" });
-    }
-  });
-
-  // Helper function to set up auto-refresh timer for an icon
-  function setupIconAutoRefresh(cacheKey: string) {
-    // Clear existing timer if any
-    if (iconRefreshTimers.has(cacheKey)) {
-      clearTimeout(iconRefreshTimers.get(cacheKey)!);
-    }
-    
-    // Set up a timer to auto-refresh when TTL expires
-    const timer = setTimeout(async () => {
-      console.log(`[Icon] Auto-refreshing expired icon for ${cacheKey}`);
-      iconCache.delete(cacheKey);
-      iconRefreshTimers.delete(cacheKey);
-      
-      // Trigger a refresh by fetching the icon again
-      const [chainId, addr] = cacheKey.split('-');
-      const cid = Number(chainId);
-      
-      // Use the same fetch logic to re-cache the icon
-      if (!iconFetchingInFlight.has(cacheKey)) {
-        const promise = fetchIconUrl(addr, cid);
-        iconFetchingInFlight.set(cacheKey, promise);
-        await promise;
-        iconFetchingInFlight.delete(cacheKey);
-        
-        // Set up auto-refresh again for the newly cached icon
-        const cached = iconCache.get(cacheKey);
-        if (cached) {
-          setupIconAutoRefresh(cacheKey);
+      const response = await fetch(url, {
+        headers: {
+          '0x-api-key': process.env.ZEROX_API_KEY || '',
         }
-      }
-    }, ICON_CACHE_TTL);
-    
-    iconRefreshTimers.set(cacheKey, timer);
-  }
-
-  // Helper function to fetch icon URL from various sources
-  async function fetchIconUrl(addr: string, cid: number): Promise<string> {
-    console.log(`[Icon] Fetching for ${addr} on chain ${cid}`);
-    const cacheKey = `${cid}-${addr}`;
-    
-    // 1. Try to get logoURI from tokens.json first (highest priority)
-    try {
-      const tokensPath = path.join(process.cwd(), 'client', 'src', 'lib', 'tokens.json');
-      const tokensData = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
-      const chainKey = cid === 1 ? 'ethereum' : 'polygon';
-      const tokensList = tokensData[chainKey] || [];
-      const token = tokensList.find((t: any) => t.address.toLowerCase() === addr);
-      
-      if (token && token.logoURI && token.logoURI.startsWith('http')) {
-        console.log(`[Icon] Found logoURI in tokens.json for ${addr}: ${token.logoURI}`);
-        iconCache.set(cacheKey, { url: token.logoURI, expires: Date.now() + ICON_CACHE_TTL });
-        setupIconAutoRefresh(cacheKey);
-        return token.logoURI;
-      }
+      });
+      const data = await response.json();
+      res.json(data);
     } catch (e) {
-      console.debug(`[Icon] Failed to fetch logoURI from tokens.json: ${e}`);
+      res.status(500).json({ error: "Proxy error" });
     }
-
-    // Try Trust Wallet first
-    const trustWalletUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${cid === 1 ? 'ethereum' : 'polygon'}/assets/${ethers.utils.getAddress(addr)}/logo.png`;
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const response = await fetch(trustWalletUrl, { method: 'HEAD', signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        console.log(`[Icon] Found on Trust Wallet for ${addr} (Checksummed)`);
-        iconCache.set(cacheKey, { url: trustWalletUrl, expires: Date.now() + ICON_CACHE_TTL });
-        setupIconAutoRefresh(cacheKey);
-        return trustWalletUrl;
-      }
-    } catch (e) {
-      console.debug(`[Icon] Trust Wallet failed for ${addr}: ${e}`);
-    }
-    
-    // 3. Try GeckoTerminal
-    const geckoTerminalUrl = `https://assets.geckoterminal.com/networks/${cid === 1 ? 'ethereum' : 'polygon'}/tokens/${addr}/thumb.png`;
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const response = await fetch(geckoTerminalUrl, { method: 'HEAD', signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        console.log(`[Icon] Found on GeckoTerminal for ${addr}`);
-        iconCache.set(cacheKey, { url: geckoTerminalUrl, expires: Date.now() + ICON_CACHE_TTL });
-        setupIconAutoRefresh(cacheKey);
-        return geckoTerminalUrl;
-      }
-    } catch (e) {
-      console.debug(`[Icon] GeckoTerminal failed for ${addr}: ${e}`);
-    }
-    
-    // Try DEXScreener
-    const dexscreenerUrl = `https://dexscreener.com/images/defiplated.png`;
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const response = await fetch(dexscreenerUrl, { method: 'HEAD', signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        iconCache.set(cacheKey, { url: dexscreenerUrl, expires: Date.now() + ICON_CACHE_TTL });
-        setupIconAutoRefresh(cacheKey);
-        return dexscreenerUrl;
-      }
-    } catch (e) {
-      console.debug(`[Icon] DEXScreener failed for ${addr}: ${e}`);
-    }
-    
-    // Fallback to placeholder
-    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhlaWdodD0iMjgiIHZpZXdCb3g9IjAgMCAyOCAyOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNCIgY3k9IjE0IiByPSIxNCIgZmlsbD0iIzJBMkEzQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjODg4IiBmb250LXNpemU9IjEyIj4/PC90ZXh0Pjwvc3ZnPg==';
-    iconCache.set(cacheKey, { url: placeholder, expires: Date.now() + ICON_CACHE_TTL });
-    setupIconAutoRefresh(cacheKey);
-    return placeholder;
-  }
-
-  app.get("/api/icon", async (req, res) => {
-    const { address, chainId } = req.query;
-    if (!address || !chainId) return res.status(400).json({ error: "Missing params" });
-    
-    const cid = Number(chainId);
-    const addr = (address as string).toLowerCase();
-    const cacheKey = `${cid}-${addr}`;
-    
-    const cached = iconCache.get(cacheKey);
-    if (cached && Date.now() < cached.expires) {
-      return res.redirect(cached.url);
-    }
-    
-    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhlaWdodD0iMjgiIHZpZXdCb3g9IjAgMCAyOCAyOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNCIgY3k9IjE0IiByPSIxNCIgZmlsbD0iIzJBMkEzQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjODg4IiBmb250LXNpemU9IjEyIj4/PC90ZXh0Pjwvc3ZnPg==';
-
-    if (iconFetchingInFlight.has(cacheKey)) {
-      const url = await iconFetchingInFlight.get(cacheKey);
-      return res.redirect(url || placeholder);
-    }
-    
-    const promise = fetchIconUrl(addr, cid);
-    iconFetchingInFlight.set(cacheKey, promise);
-    const url = await promise;
-    iconFetchingInFlight.delete(cacheKey);
-    
-    res.redirect(url || placeholder);
   });
 
-  // Monitoring endpoint for scalability verification
-  app.get("/api/system/metrics", async (req, res) => {
-    const { getCacheMetrics } = await import("./onchainDataFetcher");
-    const { getRefreshStatus } = await import("./hourlyRefreshScheduler");
-    const { getNewTokenCheckerStatus } = await import("./newTokenChecker");
-    
-    const watchlistMetrics = getMetrics();
-    const cacheMetrics = getCacheMetrics();
-    const refreshStatus = getRefreshStatus();
-    const checkerStatus = getNewTokenCheckerStatus();
-    
-    res.json({
-      watchlist: watchlistMetrics,
-      cache: cacheMetrics,
-      refresh: refreshStatus,
-      newTokenChecker: checkerStatus,
-      timestamp: new Date().toISOString(),
-    });
+  app.get("/api/proxy/rpc/eth", async (req, res) => {
+    res.json({ url: process.env.VITE_ETH_RPC_URL || "https://eth.llamarpc.com" });
   });
 
-  // Check if specific token is subscribed
-  app.get("/api/token/subscription-status", (req, res) => {
-    const { address, chainId } = req.query;
-    if (!address || !chainId) return res.status(400).json({ error: "Missing params" });
-    
-    const cid = Number(chainId);
-    const addr = (address as string).toLowerCase();
-    const key = `${cid}-${addr}`;
-    
-    const subs = activeSubscriptions.get(key);
-    const analyticsSubs = analyticsSubscriptions.get(`analytics-${key}`);
-    
-    res.json({
-      tokenKey: key,
-      priceSubscribers: subs?.clients.size || 0,
-      analyticsSubscribers: analyticsSubs?.clients.size || 0,
-      hasActiveSubscribers: (subs?.clients.size || 0) > 0 || (analyticsSubs?.clients.size || 0) > 0,
-      cachedPrice: onChainCache.get(key) ? 'YES' : 'NO',
-      cachedAnalytics: analyticsCache.get(`analytics-${key}`) ? 'YES' : 'NO',
-    });
-  });
-
-  // Clear pool cache endpoint for server maintenance
-  app.post("/api/admin/clear-pool-cache", async (req, res) => {
-    try {
-      const { clearAllPoolCache, clearPoolCacheFor } = await import("./poolCacheManager");
-      const { all, tokenAddr, stableAddr, chainId } = req.body;
-      
-      if (all) {
-        clearAllPoolCache();
-        res.json({ success: true, message: "All pool cache cleared" });
-      } else if (tokenAddr && stableAddr && chainId) {
-        clearPoolCacheFor(tokenAddr, stableAddr, chainId);
-        res.json({ success: true, message: `Pool cache cleared for token pair` });
-      } else {
-        res.status(400).json({ error: "Provide either 'all: true' or 'tokenAddr', 'stableAddr', 'chainId'" });
-      }
-    } catch (e) {
-      console.error(`[PoolCache] Clear error:`, e);
-      res.status(500).json({ error: "Failed to clear cache" });
-    }
+  app.get("/api/proxy/rpc/pol", async (req, res) => {
+    res.json({ url: process.env.VITE_POL_RPC_URL || "https://polygon-rpc.com" });
   });
 
   return httpServer;

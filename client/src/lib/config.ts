@@ -1,15 +1,14 @@
 // Load default tokens for initial selection
-import ethTokens from '../assets/tokens/eth-tokens.json';
-import polTokens from '../assets/tokens/polygon-tokens.json';
-
-const defaultEth = (ethTokens as any[]).find((t: any) => t.symbol === 'ETH' || t.symbol === 'WETH') || ethTokens[0];
-const defaultPol = (polTokens as any[]).find((t: any) => t.symbol === 'MATIC' || t.symbol === 'POL') || polTokens[0];
-const defaultUsdtEth = (ethTokens as any[]).find((t: any) => t.symbol === 'USDT') || ethTokens[1];
-const defaultUsdtPol = (polTokens as any[]).find((t: any) => t.symbol === 'USDT') || polTokens[1];
-
+// Dynamic tokens are now loaded from /api/tokens/list
 export const DEFAULT_TOKENS = {
-  1: { from: defaultEth, to: defaultUsdtEth },
-  137: { from: defaultPol, to: defaultUsdtPol }
+  1: { 
+    from: { address: "0x0000000000000000000000000000000000000000", symbol: "ETH", name: "Ethereum", decimals: 18 }, 
+    to: { address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbol: "USDC", name: "USDC", decimals: 6 } 
+  },
+  137: { 
+    from: { address: "0x0000000000000000000000000000000000001010", symbol: "MATIC", name: "Polygon", decimals: 18 }, 
+    to: { address: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", symbol: "USDC", name: "USDC", decimals: 6 } 
+  }
 };
 
 // SECURITY: All API keys are protected server-side.
