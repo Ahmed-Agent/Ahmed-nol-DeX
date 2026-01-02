@@ -136,6 +136,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (url) return res.redirect(url);
     res.status(404).send("Icon not found");
   });
+
+const CHAIN_CONFIG: Record<number, { rpc: string; usdcAddr: string; usdtAddr: string; wethAddr: string; factories: string[]; scanApi: string; scanKey: string }> = {
   1: {
     rpc: process.env.VITE_ETH_RPC_URL || "https://eth.llamarpc.com",
     usdcAddr: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
