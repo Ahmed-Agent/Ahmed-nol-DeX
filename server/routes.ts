@@ -511,9 +511,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Start background icon pre-cacher
   startBackgroundIconCacher();
   
-  // Start unconditional 25-second price refresh for all dynamic tokens
-  startUnconditionalPriceRefresh();
-  
   // Start hourly refresh scheduler (GMT/UTC aligned)
   startHourlyRefreshScheduler();
   
@@ -807,9 +804,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       const base64 = await fetchAndBase64Icon(address as string, Number(chainId));
       if (base64) {
-        // Cache-Control for browser to further reduce server load
-        res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
-        res.json({ url: base64 });
+        // Parse base64 to send correct content type
+        const parts = base64.split(';');
+        const contentType = parts[0].split(':')[1];
+        const base64Data = parts[1].split(',')[1];
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days browser cache
+        return res.send(buffer);
       } else {
         res.status(404).send("Icon not found");
       }
