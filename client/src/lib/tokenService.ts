@@ -256,12 +256,15 @@ export async function fetchTokenIcon(token: Token, chainId?: number): Promise<st
     try {
       const res = await fetch(`/api/icon?address=${addr}&chainId=${cid}`);
       if (res.ok) {
-        const data = await res.json();
-        if (data.url) {
-          // Cache session-wide for 7 days (match server TTL)
-          iconCache.set(cacheKey, { url: data.url, expires: Date.now() + 7 * 24 * 60 * 60 * 1000 });
-          return data.url;
-        }
+        // Since the API now returns a raw buffer, we don't expect JSON
+        // The browser can handle the raw URL from getTokenLogoUrl directly
+        // This function might be used where we NEED the base64/blob URL
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        
+        // Cache session-wide
+        iconCache.set(cacheKey, { url: url, expires: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+        return url;
       }
     } catch (e) {
       console.error('[TokenService] Icon fetch error:', e);

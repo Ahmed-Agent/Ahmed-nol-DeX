@@ -57,34 +57,43 @@ const iconFetchingInFlight = new Map<string, Promise<string | null>>();
  * Refreshes icons whose TTL is nearing expiry (last 10% of life) or already expired
  */
 async function startBackgroundIconCacher() {
-  setInterval(async () => {
+  const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
+  if (!fs.existsSync(tokensPath)) return;
+  
+  const runCycle = async () => {
     try {
-      const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
-      if (!fs.existsSync(tokensPath)) return;
       const tokens = JSON.parse(fs.readFileSync(tokensPath, "utf-8"));
       const allTokens = [...(tokens.ethereum || []), ...(tokens.polygon || [])];
       
       console.log(`[IconCacher] Checking ${allTokens.length} tokens for icon refresh...`);
       
-      for (const token of allTokens) {
-        if (!token.address) continue;
-        const chainId = tokens.ethereum.includes(token) ? 1 : 137;
-        const cacheKey = `${chainId}-${token.address.toLowerCase()}`;
-        const cached = iconCache.get(cacheKey);
-        
-        // Refresh if missing, or expired, or expires in less than 1 day (grace period)
-        const needsRefresh = !cached || Date.now() > (cached.expires - 24 * 60 * 60 * 1000);
-        
-        if (needsRefresh) {
-          fetchAndBase64Icon(token.address, chainId).catch(() => {});
-          // Add a small delay between fetches to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < allTokens.length; i += BATCH_SIZE) {
+        const batch = allTokens.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(async (token) => {
+          if (!token.address) return;
+          const chainId = (tokens.ethereum || []).some((t: any) => t.address.toLowerCase() === token.address.toLowerCase()) ? 1 : 137;
+          const cacheKey = `${chainId}-${token.address.toLowerCase()}`;
+          const cached = iconCache.get(cacheKey);
+          
+          const needsRefresh = !cached || Date.now() > (cached.expires - 24 * 60 * 60 * 1000);
+          if (needsRefresh) {
+            await fetchAndBase64Icon(token.address, chainId).catch(() => {});
+          }
+        }));
+        // Small pause between batches to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     } catch (e) {
       console.error(`[IconCacher] Error in background cycle:`, e);
     }
-  }, 60 * 60 * 1000); // Run every hour
+  };
+
+  // Run immediately on start
+  runCycle();
+  
+  // Then schedule hourly
+  setInterval(runCycle, 60 * 60 * 1000);
 }
 
 async function fetchAndBase64Icon(address: string, chainId: number): Promise<string | null> {

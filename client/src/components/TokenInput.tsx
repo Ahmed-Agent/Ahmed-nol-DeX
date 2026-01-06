@@ -246,26 +246,39 @@ export function TokenInput({
     }
   }, [selectedToken?.address, chainId, chain]);
 
-  // Fetch icons for all suggestions
+  // Parallelized icon fetching for suggestions
   useEffect(() => {
     if (suggestions.length === 0) return;
 
-    const newIcons = new Map(suggestionIcons);
-    let changed = false;
-    suggestions.forEach(({ token }) => {
+    // Filter tokens that don't have an icon in suggestionIcons yet
+    const tokensNeedingIcons = suggestions.filter(({ token }) => {
+      const t = token as ExtendedToken;
+      const tokenChainId = t.chainId || chainId;
+      const cacheKey = getIconCacheKey(token.address, tokenChainId);
+      return !suggestionIcons.has(cacheKey);
+    });
+
+    if (tokensNeedingIcons.length === 0) return;
+
+    // Fetch all missing icons in parallel
+    Promise.all(tokensNeedingIcons.map(async ({ token }) => {
       const t = token as ExtendedToken;
       const tokenChainId = t.chainId || chainId;
       const cacheKey = getIconCacheKey(token.address, tokenChainId);
       
-      if (!newIcons.has(cacheKey)) {
-        const iconUrl = getTokenLogoUrl(token, tokenChainId);
-        newIcons.set(cacheKey, iconUrl);
-        changed = true;
-      }
+      // getTokenLogoUrl returns a direct URL that the browser handles
+      // But we can verify it or pre-fetch if we want to ensure caching
+      const iconUrl = getTokenLogoUrl(token, tokenChainId);
+      return { cacheKey, iconUrl };
+    })).then(results => {
+      setSuggestionIcons(prev => {
+        const next = new Map(prev);
+        results.forEach(({ cacheKey, iconUrl }) => {
+          next.set(cacheKey, iconUrl);
+        });
+        return next;
+      });
     });
-    if (changed) {
-      setSuggestionIcons(newIcons);
-    }
   }, [suggestions, chainId, chain]);
 
   // Watcher for dropdown tokens visibility and selection
