@@ -52,6 +52,41 @@ const iconCache = new Map<string, { url: string; expires: number }>();
 const ICON_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 const iconFetchingInFlight = new Map<string, Promise<string | null>>();
 
+/**
+ * Background pre-cacher for all tokens
+ * Refreshes icons whose TTL is nearing expiry (last 10% of life) or already expired
+ */
+async function startBackgroundIconCacher() {
+  setInterval(async () => {
+    try {
+      const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
+      if (!fs.existsSync(tokensPath)) return;
+      const tokens = JSON.parse(fs.readFileSync(tokensPath, "utf-8"));
+      const allTokens = [...(tokens.ethereum || []), ...(tokens.polygon || [])];
+      
+      console.log(`[IconCacher] Checking ${allTokens.length} tokens for icon refresh...`);
+      
+      for (const token of allTokens) {
+        if (!token.address) continue;
+        const chainId = tokens.ethereum.includes(token) ? 1 : 137;
+        const cacheKey = `${chainId}-${token.address.toLowerCase()}`;
+        const cached = iconCache.get(cacheKey);
+        
+        // Refresh if missing, or expired, or expires in less than 1 day (grace period)
+        const needsRefresh = !cached || Date.now() > (cached.expires - 24 * 60 * 60 * 1000);
+        
+        if (needsRefresh) {
+          fetchAndBase64Icon(token.address, chainId).catch(() => {});
+          // Add a small delay between fetches to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    } catch (e) {
+      console.error(`[IconCacher] Error in background cycle:`, e);
+    }
+  }, 60 * 60 * 1000); // Run every hour
+}
+
 async function fetchAndBase64Icon(address: string, chainId: number): Promise<string | null> {
   const cacheKey = `${chainId}-${address.toLowerCase()}`;
   const cached = iconCache.get(cacheKey);
@@ -472,6 +507,9 @@ function triggerTokenRefresh() {
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   ensureTokenListExists();
+  
+  // Start background icon pre-cacher
+  startBackgroundIconCacher();
   
   // Start unconditional 25-second price refresh for all dynamic tokens
   startUnconditionalPriceRefresh();

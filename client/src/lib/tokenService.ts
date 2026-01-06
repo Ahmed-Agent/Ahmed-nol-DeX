@@ -235,14 +235,6 @@ export function getIconCacheKey(address: string, chainId: number): string {
 export function getTokenLogoUrl(token: Token, chainId?: number): string {
   if (!token || !token.address) return getPlaceholderImage();
   const cid = chainId ?? config.chainId;
-  const cacheKey = getIconCacheKey(token.address, cid);
-  
-  // Check if we already have the base64 data in our session cache
-  const cached = iconCache.get(cacheKey);
-  if (cached && Date.now() < cached.expires) {
-    return cached.url;
-  }
-  
   return `/api/icon?address=${token.address.toLowerCase()}&chainId=${cid}`;
 }
 

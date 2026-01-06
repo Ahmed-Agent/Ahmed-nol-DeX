@@ -242,7 +242,6 @@ export function TokenInput({
     if (selectedToken) {
       const t = selectedToken as ExtendedToken;
       const tokenChainId = t.chainId || chainId;
-      console.log(`[TokenInput] Loading icon for ${selectedToken.symbol} on chain ${tokenChainId}`);
       setSelectedTokenIcon(getTokenLogoUrl(selectedToken, tokenChainId));
     }
   }, [selectedToken?.address, chainId, chain]);
@@ -260,13 +259,11 @@ export function TokenInput({
       
       if (!newIcons.has(cacheKey)) {
         const iconUrl = getTokenLogoUrl(token, tokenChainId);
-        console.log(`[TokenInput] Icon Cache SET: ${cacheKey} => ${iconUrl}`);
         newIcons.set(cacheKey, iconUrl);
         changed = true;
       }
     });
     if (changed) {
-      console.log(`[TokenInput] Updating suggestion icons with ${newIcons.size} total icons`);
       setSuggestionIcons(newIcons);
     }
   }, [suggestions, chainId, chain]);
