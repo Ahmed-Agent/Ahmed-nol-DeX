@@ -260,17 +260,19 @@ export function TokenInput({
 
     if (tokensNeedingIcons.length === 0) return;
 
-    // Fetch all missing icons in parallel
-    Promise.all(tokensNeedingIcons.map(async ({ token }) => {
-      const t = token as ExtendedToken;
-      const tokenChainId = t.chainId || chainId;
-      const cacheKey = getIconCacheKey(token.address, tokenChainId);
-      
-      // getTokenLogoUrl returns a direct URL that the browser handles
-      // But we can verify it or pre-fetch if we want to ensure caching
-      const iconUrl = getTokenLogoUrl(token, tokenChainId);
-      return { cacheKey, iconUrl };
-    })).then(results => {
+    // Process tokens in batches of 10 as requested for "newly requested" tokens
+    const BATCH_SIZE = 10;
+    const processBatch = async (batch: any[]) => {
+      const results = await Promise.all(batch.map(async ({ token }) => {
+        const t = token as ExtendedToken;
+        const tokenChainId = t.chainId || chainId;
+        const cacheKey = getIconCacheKey(token.address, tokenChainId);
+        
+        // This hits the server cache which handles single-flight requests
+        const iconUrl = `/api/icon?address=${token.address.toLowerCase()}&chainId=${tokenChainId}&v=${Math.floor(Date.now() / 3600000)}`;
+        return { cacheKey, iconUrl };
+      }));
+
       setSuggestionIcons(prev => {
         const next = new Map(prev);
         results.forEach(({ cacheKey, iconUrl }) => {
@@ -278,7 +280,16 @@ export function TokenInput({
         });
         return next;
       });
-    });
+    };
+
+    const runIconFetching = async () => {
+      for (let i = 0; i < tokensNeedingIcons.length; i += BATCH_SIZE) {
+        const batch = tokensNeedingIcons.slice(i, i + BATCH_SIZE);
+        await processBatch(batch);
+      }
+    };
+
+    runIconFetching();
   }, [suggestions, chainId, chain]);
 
   // Watcher for dropdown tokens visibility and selection

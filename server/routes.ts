@@ -65,7 +65,7 @@ async function startBackgroundIconCacher() {
       
       console.log(`[IconCacher] Immediately checking ${allTokens.length} tokens for icon refresh...`);
       
-      const BATCH_SIZE = 100; // Increased batch size for even faster initial load
+      const BATCH_SIZE = 5; // User requested 5 per batch for background cycle
       for (let i = 0; i < allTokens.length; i += BATCH_SIZE) {
         const batch = allTokens.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (token) => {
@@ -92,13 +92,11 @@ async function startBackgroundIconCacher() {
             const base64 = await fetchAndBase64Icon(token.address, chainId).catch(() => null);
             if (base64) {
               console.log(`[IconCacher] Cached ${token.symbol}`);
-            } else {
-              console.warn(`[IconCacher] Failed to cache ${token.symbol} (${token.address})`);
             }
           }
         }));
-        // Reduced pause for faster initial caching
-        await new Promise(resolve => setTimeout(resolve, 10));
+        // Fast batching delay
+        await new Promise(resolve => setTimeout(resolve, 5));
       }
       console.log(`[IconCacher] Initial caching cycle complete.`);
     } catch (e) {
