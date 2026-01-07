@@ -48,14 +48,10 @@ const ANALYTICS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const watchedTokens = new Set<string>();
 const analyticsSubscriptions = new Map<string, { clients: Set<WebSocket>, lastSeen: number, ttlTimer?: NodeJS.Timeout }>();
 const analyticsFetchingLocks = new Map<string, Promise<any>>();
-const iconCache = new Map<string, { url: string; expires: number }>();
+const iconCache = new Map<string, { url: string; expires: number; sourceUrl?: string }>();
 const ICON_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 const iconFetchingInFlight = new Map<string, Promise<string | null>>();
 
-/**
- * Background pre-cacher for all tokens
- * Refreshes icons whose TTL is nearing expiry (last 10% of life) or already expired
- */
 async function startBackgroundIconCacher() {
   const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
   if (!fs.existsSync(tokensPath)) return;
@@ -63,27 +59,48 @@ async function startBackgroundIconCacher() {
   const runCycle = async () => {
     try {
       const tokens = JSON.parse(fs.readFileSync(tokensPath, "utf-8"));
-      const allTokens = [...(tokens.ethereum || []), ...(tokens.polygon || [])];
+      const ethereumTokens = tokens.ethereum || [];
+      const polygonTokens = tokens.polygon || [];
+      const allTokens = [...ethereumTokens, ...polygonTokens];
       
-      console.log(`[IconCacher] Checking ${allTokens.length} tokens for icon refresh...`);
+      console.log(`[IconCacher] Immediately checking ${allTokens.length} tokens for icon refresh...`);
       
-      const BATCH_SIZE = 10;
+      const BATCH_SIZE = 100; // Increased batch size for even faster initial load
       for (let i = 0; i < allTokens.length; i += BATCH_SIZE) {
         const batch = allTokens.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (token) => {
           if (!token.address) return;
-          const chainId = (tokens.ethereum || []).some((t: any) => t.address.toLowerCase() === token.address.toLowerCase()) ? 1 : 137;
+          const chainId = ethereumTokens.some((t: any) => t.address.toLowerCase() === token.address.toLowerCase()) ? 1 : 137;
           const cacheKey = `${chainId}-${token.address.toLowerCase()}`;
           const cached = iconCache.get(cacheKey);
           
           const needsRefresh = !cached || Date.now() > (cached.expires - 24 * 60 * 60 * 1000);
           if (needsRefresh) {
-            await fetchAndBase64Icon(token.address, chainId).catch(() => {});
+            // Priority 1: Use previous successful source if it exists and we're just refreshing
+            if (cached?.sourceUrl) {
+              try {
+                const imgRes = await fetch(cached.sourceUrl, { signal: AbortSignal.timeout(5000) });
+                if (imgRes.ok) {
+                  const buffer = await imgRes.arrayBuffer();
+                  const base64 = `data:${imgRes.headers.get('content-type') || 'image/png'};base64,${Buffer.from(buffer).toString('base64')}`;
+                  iconCache.set(cacheKey, { url: base64, expires: Date.now() + ICON_CACHE_TTL, sourceUrl: cached.sourceUrl });
+                  console.log(`[IconCacher] Refreshed ${token.symbol} from sourceUrl`);
+                  return;
+                }
+              } catch (e) {}
+            }
+            const base64 = await fetchAndBase64Icon(token.address, chainId).catch(() => null);
+            if (base64) {
+              console.log(`[IconCacher] Cached ${token.symbol}`);
+            } else {
+              console.warn(`[IconCacher] Failed to cache ${token.symbol} (${token.address})`);
+            }
           }
         }));
-        // Small pause between batches to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Reduced pause for faster initial caching
+        await new Promise(resolve => setTimeout(resolve, 10));
       }
+      console.log(`[IconCacher] Initial caching cycle complete.`);
     } catch (e) {
       console.error(`[IconCacher] Error in background cycle:`, e);
     }
@@ -109,78 +126,71 @@ async function fetchAndBase64Icon(address: string, chainId: number): Promise<str
 
   const promise = (async () => {
     try {
-      // 1. Try to get logoURI from local tokens.json first
+      const checksumAddr = ethers.utils.getAddress(address);
+      const chainPath = chainId === 1 ? 'ethereum' : 'polygon';
+      
+      // Load current tokens list for each fetch to ensure we have latest logoURIs
+      let logoURIFromMetadata: string | undefined;
       try {
         const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
         if (fs.existsSync(tokensPath)) {
           const tokens = JSON.parse(fs.readFileSync(tokensPath, "utf-8"));
           const chainKey = chainId === 1 ? "ethereum" : "polygon";
           const tokenMeta = tokens[chainKey]?.find((t: any) => t.address.toLowerCase() === address.toLowerCase());
-          
-          if (tokenMeta?.logoURI && tokenMeta.logoURI.startsWith('http')) {
-            const imgRes = await fetch(tokenMeta.logoURI);
-            if (imgRes.ok) {
-              const buffer = await imgRes.arrayBuffer();
-              const base64 = `data:${imgRes.headers.get('content-type') || 'image/png'};base64,${Buffer.from(buffer).toString('base64')}`;
-              iconCache.set(cacheKey, { url: base64, expires: Date.now() + ICON_CACHE_TTL });
-              return base64;
-            }
-          }
+          logoURIFromMetadata = tokenMeta?.logoURI;
         }
-      } catch (e) {
-        console.error(`[IconCache] Error reading tokens.json:`, e);
-      }
+      } catch (e) {}
 
-      // 1.5. Check if it's a native token and use a known good icon
+      const sources = [];
+      if (logoURIFromMetadata && logoURIFromMetadata.startsWith('http')) {
+        sources.push(logoURIFromMetadata);
+      }
+      
+      // Native fallbacks
       const isNative = (chainId === 1 && address.toLowerCase() === '0x0000000000000000000000000000000000000000') ||
                       (chainId === 137 && address.toLowerCase() === '0x0000000000000000000000000000000000001010');
       if (isNative) {
-        const nativeUrl = chainId === 1 
+        sources.push(chainId === 1 
           ? "https://assets.coingecko.com/coins/images/279/large/ethereum.png"
-          : "https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png";
-        const imgRes = await fetch(nativeUrl);
-        if (imgRes.ok) {
-          const buffer = await imgRes.arrayBuffer();
-          const base64 = `data:${imgRes.headers.get('content-type') || 'image/png'};base64,${Buffer.from(buffer).toString('base64')}`;
-          iconCache.set(cacheKey, { url: base64, expires: Date.now() + ICON_CACHE_TTL });
-          return base64;
-        }
+          : "https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png");
       }
 
-      // 2. Fallback to other sources
-      const checksumAddr = ethers.utils.getAddress(address);
-      const chainPath = chainId === 1 ? 'ethereum' : 'polygon';
-      const sources = [
+      // External fallbacks
+      sources.push(
         `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${chainPath}/assets/${checksumAddr}/logo.png`,
         `https://assets-cdn.trustwallet.com/blockchains/${chainPath}/assets/${checksumAddr}/logo.png`,
         `https://api.coingecko.com/api/v3/coins/${chainId === 1 ? 'ethereum' : 'polygon-pos'}/contract/${address.toLowerCase()}`
-      ];
+      );
 
       for (const source of sources) {
         try {
-          const response = await fetch(source);
+          const response = await fetch(source, { signal: AbortSignal.timeout(5000) });
           if (!response.ok) continue;
 
           let iconUrl = source;
-          if (source.includes('coingecko')) {
+          if (source.includes('coingecko.com/api')) {
             const data = await response.json();
-            iconUrl = data.image?.small || data.image?.large || data.image?.thumb;
+            iconUrl = data.image?.large || data.image?.small || data.image?.thumb;
             if (!iconUrl) continue;
+            // Fetch the actual image from the Coingecko provided URL
+            const finalRes = await fetch(iconUrl, { signal: AbortSignal.timeout(5000) });
+            if (!finalRes.ok) continue;
+            const buffer = await finalRes.arrayBuffer();
+            const base64 = `data:${finalRes.headers.get('content-type') || 'image/png'};base64,${Buffer.from(buffer).toString('base64')}`;
+            iconCache.set(cacheKey, { url: base64, expires: Date.now() + ICON_CACHE_TTL, sourceUrl: iconUrl });
+            return base64;
           }
 
-          const imgRes = await fetch(iconUrl);
-          if (!imgRes.ok) continue;
-          
-          const buffer = await imgRes.arrayBuffer();
-          const base64 = `data:${imgRes.headers.get('content-type') || 'image/png'};base64,${Buffer.from(buffer).toString('base64')}`;
-          iconCache.set(cacheKey, { url: base64, expires: Date.now() + ICON_CACHE_TTL });
+          const buffer = await response.arrayBuffer();
+          const base64 = `data:${response.headers.get('content-type') || 'image/png'};base64,${Buffer.from(buffer).toString('base64')}`;
+          iconCache.set(cacheKey, { url: base64, expires: Date.now() + ICON_CACHE_TTL, sourceUrl: iconUrl });
           return base64;
         } catch (e) {
           continue;
         }
       }
     } catch (e) {
-      console.error(`[IconCache] Error for ${address}:`, e);
+      console.error(`[IconCache] Global error for ${address}:`, e);
     } finally {
       iconFetchingInFlight.delete(cacheKey);
     }

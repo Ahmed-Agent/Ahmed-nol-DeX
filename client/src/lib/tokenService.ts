@@ -235,7 +235,10 @@ export function getIconCacheKey(address: string, chainId: number): string {
 export function getTokenLogoUrl(token: Token, chainId?: number): string {
   if (!token || !token.address) return getPlaceholderImage();
   const cid = chainId ?? config.chainId;
-  return `/api/icon?address=${token.address.toLowerCase()}&chainId=${cid}`;
+  // Use a stable cache-busting key or just the address
+  // We want to force the browser to re-request if it fails or if we want updates
+  // But primarily we want it to hit the server cache
+  return `/api/icon?address=${token.address.toLowerCase()}&chainId=${cid}&v=${Math.floor(Date.now() / (3600000))}`; // Hourly cache bust for browser
 }
 
 export async function fetchTokenIcon(token: Token, chainId?: number): Promise<string> {
