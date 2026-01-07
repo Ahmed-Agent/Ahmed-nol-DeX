@@ -109,9 +109,6 @@ async function fetchAndBase64Icon(address: string, chainId: number): Promise<str
 
   const promise = (async () => {
     try {
-      const checksumAddr = ethers.utils.getAddress(address);
-      const chainPath = chainId === 1 ? 'ethereum' : 'polygon';
-      
       // 1. Try to get logoURI from local tokens.json first
       try {
         const tokensPath = path.join(process.cwd(), "client", "src", "lib", "tokens.json");
@@ -151,6 +148,8 @@ async function fetchAndBase64Icon(address: string, chainId: number): Promise<str
       }
 
       // 2. Fallback to other sources
+      const checksumAddr = ethers.utils.getAddress(address);
+      const chainPath = chainId === 1 ? 'ethereum' : 'polygon';
       const sources = [
         `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${chainPath}/assets/${checksumAddr}/logo.png`,
         `https://assets-cdn.trustwallet.com/blockchains/${chainPath}/assets/${checksumAddr}/logo.png`,
