@@ -65,7 +65,7 @@ async function startBackgroundIconCacher() {
       
       console.log(`[IconCacher] Immediately checking ${allTokens.length} tokens for icon refresh...`);
       
-      const BATCH_SIZE = 5; // User requested 5 per batch for background cycle
+      const BATCH_SIZE = 10; // Increased batch size for faster initial caching
       for (let i = 0; i < allTokens.length; i += BATCH_SIZE) {
         const batch = allTokens.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (token) => {
@@ -74,29 +74,23 @@ async function startBackgroundIconCacher() {
           const cacheKey = `${chainId}-${token.address.toLowerCase()}`;
           const cached = iconCache.get(cacheKey);
           
+          // Force refresh if no icon or if icon is old
           const needsRefresh = !cached || Date.now() > (cached.expires - 24 * 60 * 60 * 1000);
           if (needsRefresh) {
-            // Priority 1: Use previous successful source if it exists and we're just refreshing
-            if (cached?.sourceUrl) {
-              try {
-                const imgRes = await fetch(cached.sourceUrl, { signal: AbortSignal.timeout(5000) });
-                if (imgRes.ok) {
-                  const buffer = await imgRes.arrayBuffer();
-                  const base64 = `data:${imgRes.headers.get('content-type') || 'image/png'};base64,${Buffer.from(buffer).toString('base64')}`;
-                  iconCache.set(cacheKey, { url: base64, expires: Date.now() + ICON_CACHE_TTL, sourceUrl: cached.sourceUrl });
-                  console.log(`[IconCacher] Refreshed ${token.symbol} from sourceUrl`);
-                  return;
-                }
-              } catch (e) {}
-            }
-            const base64 = await fetchAndBase64Icon(token.address, chainId).catch(() => null);
-            if (base64) {
-              console.log(`[IconCacher] Cached ${token.symbol}`);
+            try {
+              const base64 = await fetchAndBase64Icon(token.address, chainId);
+              if (base64) {
+                console.log(`[IconCacher] Successfully cached icon for ${token.symbol} (${token.address})`);
+              } else {
+                console.warn(`[IconCacher] Failed to cache icon for ${token.symbol} (${token.address}) after trying all sources`);
+              }
+            } catch (err) {
+              console.error(`[IconCacher] Error caching ${token.symbol}:`, err);
             }
           }
         }));
-        // Fast batching delay
-        await new Promise(resolve => setTimeout(resolve, 5));
+        // Small delay to prevent hitting rate limits too hard but still move fast
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
       console.log(`[IconCacher] Initial caching cycle complete.`);
     } catch (e) {
@@ -157,6 +151,8 @@ async function fetchAndBase64Icon(address: string, chainId: number): Promise<str
       sources.push(
         `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${chainPath}/assets/${checksumAddr}/logo.png`,
         `https://assets-cdn.trustwallet.com/blockchains/${chainPath}/assets/${checksumAddr}/logo.png`,
+        `https://raw.githubusercontent.com/pancakeswap/token-list/master/assets/${address.toLowerCase()}/logo.png`,
+        `https://raw.githubusercontent.com/uniswap/assets/master/blockchains/${chainPath}/assets/${checksumAddr}/logo.png`,
         `https://api.coingecko.com/api/v3/coins/${chainId === 1 ? 'ethereum' : 'polygon-pos'}/contract/${address.toLowerCase()}`
       );
 
