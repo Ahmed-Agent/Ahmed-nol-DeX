@@ -8,31 +8,38 @@
 
 ## Recent Fixes (2026-01-13)
 
-### WebSocket Chain-Switching Improvements
+### WebSocket Chain-Switching Improvements ✅
 
 Fixed critical issues with WebSocket subscriptions when switching between ETH/POL/BRG chain modes:
 
 #### Issues Fixed:
 
-1. **Duplicate Subscriptions in BRG Mode**
+1. **Duplicate Subscriptions in BRG Mode** ✅
    - **Problem**: When switching from ETH to POL mode (or vice versa), clients could subscribe to the same token address on different chains, but the WebSocket wasn't properly handling these as separate subscriptions
    - **Solution**: Enhanced subscription key to always use `chainId-address` format, ensuring proper separation between chains
    - **Result**: BRG mode can now properly handle the same token address on multiple chains without conflicts
+   - **Example**: A user can now subscribe to USDC (0x...) on both Ethereum (chainId: 1) and Polygon (chainId: 137) simultaneously in BRG mode
 
-2. **Subscription Loss on Reconnect**
-   - **Problem**: When WebSocket reconnects, all active subscriptions were lost
+2. **Subscription Loss on Reconnect** ✅
+   - **Problem**: When WebSocket reconnects (due to network issues or server restart), all active subscriptions were lost
    - **Solution**: Implemented pending subscription queue and automatic re-subscription on reconnect
    - **Result**: Seamless reconnection with all subscriptions restored automatically
+   - **Technical Details**: 
+     - Subscriptions are queued if WebSocket is not ready
+     - On reconnection, both pending and active subscriptions are restored
+     - No user intervention required
 
-3. **Chain-Switching Subscription Cleanup**
-   - **Problem**: Old subscriptions weren't properly cleaned up when switching chains
+3. **Chain-Switching Subscription Cleanup** ✅
+   - **Problem**: Old subscriptions weren't properly cleaned up when switching chains, leading to memory leaks and unnecessary server load
    - **Solution**: Added `clearAllSubscriptions()` function for clean chain switches
    - **Added Logging**: Enhanced logging for debugging subscription flow during chain switches
+   - **Usage**: Call `clearAllSubscriptions()` before switching chains to ensure clean state
 
-4. **Icon Caching Across Chains**
-   - **Problem**: Icon cache didn't properly differentiate between the same token address on different chains
+4. **Icon Caching Across Chains** ✅
+   - **Problem**: Icon cache could confuse the same token address on different chains
    - **Solution**: Icon cache now uses `chainId-address` as key (already implemented in server, documented here)
    - **Result**: Proper icon caching for multi-chain tokens in BRG mode
+   - **Cache Key Format**: `"1-0x...address..."` for Ethereum, `"137-0x...address..."` for Polygon
 
 #### Implementation Details:
 
@@ -42,73 +49,214 @@ Fixed critical issues with WebSocket subscriptions when switching between ETH/PO
 const activeSubscriptions = new Map<string, { 
   callback: (price: OnChainPrice) => void; 
   ttlTimer?: NodeJS.Timeout; 
-  chainId: number; 
-  address: string 
+  chainId: number;  // NEW: Track chainId for reconnection
+  address: string   // NEW: Track address for reconnection
 }>();
 
-// Pending subscriptions queue for reconnection
+// NEW: Pending subscriptions queue for reconnection handling
 let pendingSubscriptions: Array<{ address: string; chainId: number }> = [];
 
 // Auto-resubscribe on reconnect
 ws.onopen = () => {
-  // Re-subscribe pending subscriptions
-  pendingSubscriptions.forEach(({ address, chainId }) => {
-    ws.send(JSON.stringify({ type: 'subscribe', address, chainId }));
-  });
+  console.log('✓ Price WebSocket connected');
+  reconnectAttempts = 0;
   
-  // Re-subscribe active subscriptions
+  // Re-subscribe pending subscriptions first
+  if (pendingSubscriptions.length > 0) {
+    console.log(`[PriceService] Re-subscribing to ${pendingSubscriptions.length} pending subscriptions`);
+    pendingSubscriptions.forEach(({ address, chainId }) => {
+      ws.send(JSON.stringify({ type: 'subscribe', address, chainId }));
+    });
+    pendingSubscriptions = [];
+  }
+  
+  // Re-subscribe all active subscriptions
   activeSubscriptions.forEach((sub, subKey) => {
     ws.send(JSON.stringify({ type: 'subscribe', address: sub.address, chainId: sub.chainId }));
   });
 };
 
-// New: Clear all subscriptions function
+// NEW: Clear all subscriptions function for chain switching
 export function clearAllSubscriptions(): void {
+  console.log(`[PriceService] Clearing all ${activeSubscriptions.size} active subscriptions`);
   activeSubscriptions.forEach((sub, key) => {
     const [chainId, address] = key.split('-');
     ws.send(JSON.stringify({ type: 'unsubscribe', address, chainId: Number(chainId) }));
   });
   activeSubscriptions.clear();
-  // ... cleanup timers and pending queue
+  subscriptionTTLTimers.forEach(timer => clearTimeout(timer));
+  subscriptionTTLTimers.clear();
+  pendingSubscriptions = [];
+}
+
+// Enhanced subscription with queue support
+export function subscribeToPrice(address: string, chainId: number, callback: (price: OnChainPrice) => void) {
+  const subKey = `${chainId}-${address.toLowerCase()}`;
+  
+  // Store with chain info for reconnection
+  activeSubscriptions.set(subKey, { callback, chainId, address: address.toLowerCase() });
+  
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'subscribe', address, chainId }));
+    console.log(`[PriceService] ✓ Subscribed to ${subKey}`);
+  } else {
+    // Queue for when connection is ready
+    pendingSubscriptions.push({ address: address.toLowerCase(), chainId });
+    console.log(`[PriceService] Queued subscription for ${subKey} (WebSocket not ready)`);
+  }
+  
+  // Return unsubscribe function with cleanup
+  return () => {
+    activeSubscriptions.delete(subKey);
+    pendingSubscriptions = pendingSubscriptions.filter(
+      p => !(p.address === address.toLowerCase() && p.chainId === chainId)
+    );
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'unsubscribe', address, chainId }));
+    }
+    console.log(`[PriceService] Unsubscribed from ${subKey}`);
+  };
 }
 ```
 
 **Server-side (`routes.ts`)**:
 ```typescript
-ws.on('message', async (msg) => {
-  if (data.type === 'subscribe') {
-    const key = `${data.chainId}-${data.address.toLowerCase()}`;
-    
-    // Log subscription for debugging
-    console.log(`[WS] Client subscribing to ${key}`);
-    
-    // Always ensure client is added, even if already subscribed
-    // This handles BRG mode where user might switch chains
-    if (!activeSubscriptions.has(key)) {
-      activeSubscriptions.set(key, { clients: new Set(), lastSeen: Date.now() });
+wss.on('connection', (ws) => {
+  tokenRefreshClients.add(ws);
+  const sessionSubscriptions = new Set<string>();
+  const sessionAnalyticsSubscriptions = new Set<string>();
+  
+  console.log(`[WS] New client connected. Total clients: ${tokenRefreshClients.size}`);
+  
+  ws.on('message', async (msg) => {
+    if (data.type === 'subscribe') {
+      const key = `${data.chainId}-${data.address.toLowerCase()}`;
+      
+      // Enhanced logging for debugging chain-switching issues
+      console.log(`[WS] Client subscribing to ${key} | Session already has: ${sessionSubscriptions.has(key)}`);
+      
+      // Clear existing TTL timers
+      const sub = activeSubscriptions.get(key);
+      if (sub?.ttlTimer) {
+        clearTimeout(sub.ttlTimer);
+        sub.ttlTimer = undefined;
+        console.log(`[WS] TTL cleared for ${key} due to re-subscription`);
+      }
+
+      // Always ensure subscription exists and client is added
+      // This is critical for BRG mode where user might switch chains and re-select same token
+      if (!sessionSubscriptions.has(key)) {
+        sessionSubscriptions.add(key);
+        subscribeToken(data.chainId, data.address);
+      }
+      
+      if (!activeSubscriptions.has(key)) {
+        activeSubscriptions.set(key, { clients: new Set(), lastSeen: Date.now() });
+      }
+      activeSubscriptions.get(key)!.clients.add(ws);
+      
+      // Update lastSeen to prevent premature cleanup
+      const activeSub = activeSubscriptions.get(key);
+      if (activeSub) {
+        activeSub.lastSeen = Date.now();
+      }
+
+      // Send cached price immediately if available
+      const cachedPrice = onChainCache.get(key);
+      if (cachedPrice && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'price', data: cachedPrice, address: data.address, chainId: data.chainId }));
+        console.log(`[WS] ✓ Sent cached price for ${key}`);
+      } else {
+        console.log(`[WS] No cached price for ${key}, fetching fresh`);
+      }
+      
+      // Fetch fresh price in background (non-blocking)
+      getOnChainPrice(data.address, data.chainId).catch(err => {
+        console.error(`[WS] Background price fetch error:`, err);
+      });
+      
+      // Handle analytics subscriptions (similar pattern)
+      const analyticsKey = `analytics-${key}`;
+      if (!sessionAnalyticsSubscriptions.has(analyticsKey)) {
+        sessionAnalyticsSubscriptions.add(analyticsKey);
+        if (!analyticsSubscriptions.has(analyticsKey)) {
+          analyticsSubscriptions.set(analyticsKey, { clients: new Set(), lastSeen: Date.now() });
+        }
+        analyticsSubscriptions.get(analyticsKey)!.clients.add(ws);
+      } else {
+        // Re-add client even if in session (handles reconnections)
+        if (!analyticsSubscriptions.has(analyticsKey)) {
+          analyticsSubscriptions.set(analyticsKey, { clients: new Set(), lastSeen: Date.now() });
+        }
+        analyticsSubscriptions.get(analyticsKey)!.clients.add(ws);
+      }
+      
+      // Send analytics
+      const analytics = await getOnChainAnalytics(data.address, data.chainId);
+      if (analytics && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'analytics', data: analytics, address: data.address, chainId: data.chainId }));
+        console.log(`[WS] ✓ Sent analytics for ${key}`);
+      }
     }
-    activeSubscriptions.get(key)!.clients.add(ws);
-    
-    // Send cached price immediately
-    const cachedPrice = onChainCache.get(key);
-    if (cachedPrice) {
-      ws.send(JSON.stringify({ type: 'price', data: cachedPrice, address, chainId }));
-      console.log(`[WS] ✓ Sent cached price for ${key}`);
-    }
-    
-    // Fetch fresh price in background
-    getOnChainPrice(address, chainId);
-  }
+  });
 });
 ```
 
 #### Testing Recommendations:
 
-1. **Test ETH → POL → ETH switching**: Verify subscriptions maintain across chain switches
-2. **Test BRG mode with same address**: Subscribe to same token on both chains, verify separate subscriptions
-3. **Test WebSocket reconnection**: Disconnect/reconnect, verify all subscriptions restore
-4. **Test icon caching**: Verify icons load correctly for multi-chain tokens
-5. **Monitor logs**: Check for `[WS]` and `[PriceService]` logs during chain switching
+1. **Test ETH → POL → ETH switching**: 
+   - Open app, select token on ETH
+   - Switch to POL chain
+   - Select same token on POL
+   - Switch back to ETH
+   - Verify subscriptions maintain and prices update correctly
+
+2. **Test BRG mode with same address**: 
+   - Enter BRG mode
+   - Select USDC on Ethereum (0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48)
+   - Select USDC on Polygon (0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174)
+   - Verify both subscriptions work independently
+   - Verify different prices are shown for each
+
+3. **Test WebSocket reconnection**: 
+   - Subscribe to several tokens
+   - Simulate network disconnect (disable network in DevTools)
+   - Re-enable network
+   - Verify all subscriptions automatically restore
+   - Check console for `[PriceService] Re-subscribing` messages
+
+4. **Test icon caching**: 
+   - Open token dropdowns on different chains
+   - Verify icons load correctly for all tokens
+   - Check that same token address on different chains shows correct chain-specific icon (if different)
+
+5. **Monitor logs**: 
+   - Open browser console
+   - Look for `[WS]` logs (server-side, visible in terminal)
+   - Look for `[PriceService]` logs (client-side, visible in browser)
+   - Verify proper subscription/unsubscription flow
+
+#### Expected Log Output:
+
+**Client Console (Browser)**:
+```
+[PriceService] ✓ Subscribed to 1-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+[PriceService] ✓ Subscribed to 137-0x2791bca1f2de4661ed88a30c99a7a9449aa84174
+✓ Price WebSocket connected
+[PriceService] Re-subscribing to 2 pending subscriptions
+[PriceService] Unsubscribed from 1-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+[PriceService] Clearing all 1 active subscriptions
+```
+
+**Server Logs (Terminal)**:
+```
+[WS] New client connected. Total clients: 1
+[WS] Client subscribing to 1-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 | Session already has: false
+[WS] ✓ Sent cached price for 1-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+[WS] ✓ Sent analytics for 1-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+[WS] Client subscribing to 137-0x2791bca1f2de4661ed88a30c99a7a9449aa84174 | Session already has: false
+[WS] No cached price for 137-0x2791bca1f2de4661ed88a30c99a7a9449aa84174, fetching fresh
+```
 
 ---
 
