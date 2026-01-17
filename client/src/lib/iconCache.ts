@@ -123,16 +123,20 @@ class IconCacheManager {
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
 
-      // Store in cache only if this request hasn't been superseded
-      const currentPending = this.pendingRequests.get(cacheKey);
-      if (!currentPending || currentPending.version === version) {
-        this.cache.set(cacheKey, {
-          url: blobUrl,
-          version,
-          expires: Date.now() + this.CACHE_TTL
-        });
+      // Store in cache only if this is still the latest request
+      // Check version instead of pending request to handle cleanup race
+      const entry: IconCacheEntry = {
+        url: blobUrl,
+        version,
+        expires: Date.now() + this.CACHE_TTL
+      };
+      
+      const existing = this.cache.get(cacheKey);
+      if (!existing || existing.version < version) {
+        // Only cache if newer than existing, or no existing entry
+        this.cache.set(cacheKey, entry);
       } else {
-        // Request was superseded, revoke blob URL to prevent memory leak
+        // This is a stale result, don't cache it
         URL.revokeObjectURL(blobUrl);
         return this.PLACEHOLDER;
       }
@@ -151,7 +155,7 @@ class IconCacheManager {
 
   /**
    * Get icon synchronously from cache only (doesn't trigger fetch)
-   * Returns placeholder if not in cache
+   * Returns placeholder if not in cache, and triggers background fetch
    */
   getIconSync(address: string, chainId: number): string {
     const cacheKey = this.getCacheKey(address, chainId);
@@ -161,9 +165,13 @@ class IconCacheManager {
       return cached.url;
     }
     
-    // Return the API URL directly for immediate display
-    // This allows the browser to fetch it while we load from cache
-    return this.getIconUrl(address, chainId);
+    // Not in cache - trigger async fetch in background
+    // This ensures the icon will be available on next render
+    this.getIcon(address, chainId).catch(() => {
+      // Silently fail - placeholder will be shown
+    });
+    
+    return this.PLACEHOLDER;
   }
 
   /**

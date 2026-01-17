@@ -233,6 +233,7 @@ export function getTokenLogoUrl(token: Token, chainId?: number): string {
   if (!token || !token.address) return getPlaceholderImage();
   const cid = chainId ?? config.chainId;
   // Use unified icon cache for consistent behavior
+  // This will return placeholder and trigger background fetch if not cached
   return iconCache.getIconSync(token.address, cid);
 }
 
