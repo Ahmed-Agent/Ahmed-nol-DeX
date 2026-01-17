@@ -1,0 +1,258 @@
+/**
+ * Unified Icon Cache Manager
+ * 
+ * This module provides a centralized icon caching system that:
+ * - Prevents race conditions with request versioning
+ * - Shares cache across all components (TokenSearchBar, TokenInput, tokenService)
+ * - Implements request cancellation for stale fetches
+ * - Reduces cache-busting URL churn
+ * - Ensures consistent fallback behavior
+ */
+
+interface IconCacheEntry {
+  url: string;
+  version: number;
+  expires: number;
+}
+
+interface PendingRequest {
+  controller: AbortController;
+  promise: Promise<string>;
+  version: number;
+}
+
+class IconCacheManager {
+  private cache = new Map<string, IconCacheEntry>();
+  private pendingRequests = new Map<string, PendingRequest>();
+  private requestVersion = 0;
+  private readonly CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+  private readonly PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgiIGhlaWdodD0iMjgiIHZpZXdCb3g9IjAgMCAyOCAyOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNCIgY3k9IjE0IiByPSIxNCIgZmlsbD0iIzJBMkEzQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjODg4IiBmb250LXNpemU9IjEyIj4/PC90ZXh0Pjwvc3ZnPg==';
+
+  /**
+   * Get cache key for a token
+   */
+  private getCacheKey(address: string, chainId: number): string {
+    return `${chainId}-${address.toLowerCase()}`;
+  }
+
+  /**
+   * Get icon URL for a token with versioning to prevent cache-busting churn
+   * Uses daily versioning (changes once per day) instead of hourly
+   */
+  private getIconUrl(address: string, chainId: number): string {
+    // Use daily cache-busting instead of hourly to reduce churn
+    const dailyVersion = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+    return `/api/icon?address=${address.toLowerCase()}&chainId=${chainId}&v=${dailyVersion}`;
+  }
+
+  /**
+   * Get placeholder image
+   */
+  getPlaceholder(): string {
+    return this.PLACEHOLDER;
+  }
+
+  /**
+   * Get icon from cache or fetch with race condition protection
+   */
+  async getIcon(address: string, chainId: number): Promise<string> {
+    const cacheKey = this.getCacheKey(address, chainId);
+    
+    // Check cache first
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() < cached.expires) {
+      return cached.url;
+    }
+
+    // Check if there's already a pending request
+    const pending = this.pendingRequests.get(cacheKey);
+    if (pending) {
+      // Wait for the existing request instead of creating a new one
+      try {
+        return await pending.promise;
+      } catch (e) {
+        // If the pending request was cancelled or failed, continue to create a new one
+      }
+    }
+
+    // Create new request with cancellation support
+    const controller = new AbortController();
+    const version = ++this.requestVersion;
+    
+    const promise = this.fetchIcon(address, chainId, controller.signal, version, cacheKey);
+    
+    this.pendingRequests.set(cacheKey, {
+      controller,
+      promise,
+      version
+    });
+
+    try {
+      const result = await promise;
+      return result;
+    } finally {
+      // Clean up pending request if it's still the same version
+      const currentPending = this.pendingRequests.get(cacheKey);
+      if (currentPending && currentPending.version === version) {
+        this.pendingRequests.delete(cacheKey);
+      }
+    }
+  }
+
+  /**
+   * Fetch icon from server with abort signal support
+   */
+  private async fetchIcon(
+    address: string,
+    chainId: number,
+    signal: AbortSignal,
+    version: number,
+    cacheKey: string
+  ): Promise<string> {
+    try {
+      const iconUrl = this.getIconUrl(address, chainId);
+      
+      // Fetch with abort signal
+      const response = await fetch(iconUrl, { signal });
+      
+      if (!response.ok) {
+        return this.PLACEHOLDER;
+      }
+
+      // Convert to blob URL for efficient browser caching
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Store in cache only if this request hasn't been superseded
+      const currentPending = this.pendingRequests.get(cacheKey);
+      if (!currentPending || currentPending.version === version) {
+        this.cache.set(cacheKey, {
+          url: blobUrl,
+          version,
+          expires: Date.now() + this.CACHE_TTL
+        });
+      } else {
+        // Request was superseded, revoke blob URL to prevent memory leak
+        URL.revokeObjectURL(blobUrl);
+        return this.PLACEHOLDER;
+      }
+
+      return blobUrl;
+    } catch (error) {
+      // Check if this was an abort
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log(`[IconCache] Request cancelled for ${cacheKey}`);
+      } else {
+        console.error(`[IconCache] Error fetching icon for ${cacheKey}:`, error);
+      }
+      return this.PLACEHOLDER;
+    }
+  }
+
+  /**
+   * Get icon synchronously from cache only (doesn't trigger fetch)
+   * Returns placeholder if not in cache
+   */
+  getIconSync(address: string, chainId: number): string {
+    const cacheKey = this.getCacheKey(address, chainId);
+    const cached = this.cache.get(cacheKey);
+    
+    if (cached && Date.now() < cached.expires) {
+      return cached.url;
+    }
+    
+    // Return the API URL directly for immediate display
+    // This allows the browser to fetch it while we load from cache
+    return this.getIconUrl(address, chainId);
+  }
+
+  /**
+   * Prefetch icons for a batch of tokens
+   * Used for dropdown suggestions to warm up cache
+   */
+  async prefetchIcons(tokens: Array<{ address: string; chainId: number }>): Promise<void> {
+    const BATCH_SIZE = 10;
+    
+    for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+      const batch = tokens.slice(i, i + BATCH_SIZE);
+      
+      // Fire off all fetches in parallel within batch
+      await Promise.allSettled(
+        batch.map(token => this.getIcon(token.address, token.chainId))
+      );
+    }
+  }
+
+  /**
+   * Cancel all pending requests for a specific token
+   */
+  cancelRequest(address: string, chainId: number): void {
+    const cacheKey = this.getCacheKey(address, chainId);
+    const pending = this.pendingRequests.get(cacheKey);
+    
+    if (pending) {
+      pending.controller.abort();
+      this.pendingRequests.delete(cacheKey);
+    }
+  }
+
+  /**
+   * Cancel all pending requests
+   */
+  cancelAllRequests(): void {
+    this.pendingRequests.forEach(pending => {
+      pending.controller.abort();
+    });
+    this.pendingRequests.clear();
+  }
+
+  /**
+   * Clear expired entries from cache
+   */
+  cleanup(): void {
+    const now = Date.now();
+    const expiredKeys: string[] = [];
+    
+    this.cache.forEach((entry, key) => {
+      if (now >= entry.expires) {
+        expiredKeys.push(key);
+        // Revoke blob URL to free memory
+        if (entry.url.startsWith('blob:')) {
+          URL.revokeObjectURL(entry.url);
+        }
+      }
+    });
+    
+    expiredKeys.forEach(key => this.cache.delete(key));
+    
+    if (expiredKeys.length > 0) {
+      console.log(`[IconCache] Cleaned up ${expiredKeys.length} expired entries`);
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getStats() {
+    return {
+      cacheSize: this.cache.size,
+      pendingRequests: this.pendingRequests.size,
+      currentVersion: this.requestVersion
+    };
+  }
+}
+
+// Export singleton instance
+export const iconCache = new IconCacheManager();
+
+// Cleanup expired entries every hour
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    iconCache.cleanup();
+  }, 60 * 60 * 1000);
+}
+
+// Helper function to get icon cache key (for backwards compatibility)
+export function getIconCacheKey(address: string, chainId: number): string {
+  return `${chainId}-${address.toLowerCase()}`;
+}
