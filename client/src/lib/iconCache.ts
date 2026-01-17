@@ -125,22 +125,21 @@ class IconCacheManager {
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
 
-      // Store in cache only if this is still the latest request
-      // Check version instead of pending request to handle cleanup race
-      const entry: IconCacheEntry = {
-        url: blobUrl,
-        version,
-        expires: Date.now() + this.CACHE_TTL
-      };
-      
+      // Store in cache only if this request version is newer than what's in cache
       const existing = this.cache.get(cacheKey);
-      if (!existing || existing.version < version) {
-        // Only cache if newer than existing, or no existing entry
+      if (!existing || version > existing.version) {
+        // Only cache if this version is newer than what exists
+        const entry: IconCacheEntry = {
+          url: blobUrl,
+          version,
+          expires: Date.now() + this.CACHE_TTL
+        };
         this.cache.set(cacheKey, entry);
       } else {
-        // This is a stale result, don't cache it
+        // This is a stale result (older version), don't cache it
         URL.revokeObjectURL(blobUrl);
-        return this.PLACEHOLDER;
+        // Return the newer cached version instead
+        return existing.url;
       }
 
       return blobUrl;
@@ -169,8 +168,9 @@ class IconCacheManager {
     
     // Not in cache - trigger async fetch in background
     // This ensures the icon will be available on next render
-    this.getIcon(address, chainId).catch(() => {
-      // Silently fail - placeholder will be shown
+    this.getIcon(address, chainId).catch((error) => {
+      // Log error for debugging but don't throw - placeholder will be shown
+      console.warn(`[IconCache] Background fetch failed for ${cacheKey}:`, error);
     });
     
     return this.PLACEHOLDER;
@@ -255,11 +255,23 @@ class IconCacheManager {
 // Export singleton instance
 export const iconCache = new IconCacheManager();
 
-// Cleanup expired entries every hour
+// Cleanup expired entries every hour and store interval ID for cleanup
+let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
+
 if (typeof window !== 'undefined') {
-  setInterval(() => {
+  cleanupIntervalId = setInterval(() => {
     iconCache.cleanup();
   }, iconCache.CLEANUP_INTERVAL_MS);
+  
+  // Cleanup on module unload if supported
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('beforeunload', () => {
+      if (cleanupIntervalId) {
+        clearInterval(cleanupIntervalId);
+        cleanupIntervalId = null;
+      }
+    });
+  }
 }
 
 // Helper function to get icon cache key (for backwards compatibility)
