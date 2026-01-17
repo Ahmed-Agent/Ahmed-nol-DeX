@@ -256,6 +256,8 @@ class IconCacheManager {
 export const iconCache = new IconCacheManager();
 
 // Cleanup expired entries every hour and store interval ID for cleanup
+// Note: This constant is intentionally separate from the class private member
+// to avoid circular dependency during module initialization
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 
