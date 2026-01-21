@@ -194,6 +194,15 @@ export function TokenInput({
     }
   }, [chain, chainId]);
 
+  useEffect(() => {
+    if (suggestions.length > 0) {
+      iconCache.prefetchIcons(suggestions.map(({ token }) => ({
+        address: token.address,
+        chainId: (token as ExtendedToken).chainId || chainId
+      })));
+    }
+  }, [suggestions, chainId]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchQuery(value);

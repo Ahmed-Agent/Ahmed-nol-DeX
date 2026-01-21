@@ -137,6 +137,15 @@ export function TokenSearchBar({ onTokenSelect }: TokenSearchBarProps) {
     }
   }, [chain]);
 
+  useEffect(() => {
+    if (suggestions.length > 0) {
+      iconCache.prefetchIcons(suggestions.map(({ token }) => ({
+        address: token.address,
+        chainId: (token as ExtendedToken).chainId || (chain === 'ETH' ? 1 : 137)
+      })));
+    }
+  }, [suggestions, chain]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchQuery(value);
