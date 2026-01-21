@@ -59,7 +59,7 @@ class IconCacheManager {
   async getIcon(address: string, chainId: number): Promise<string> {
     const cacheKey = this.getCacheKey(address, chainId);
     
-    // Check cache first
+    // Check cache first - IMMEDIATE SKIP if cached
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() < cached.expires) {
       return cached.url;
@@ -68,12 +68,8 @@ class IconCacheManager {
     // Check if there's already a pending request
     const pending = this.pendingRequests.get(cacheKey);
     if (pending) {
-      // Wait for the existing request instead of creating a new one
-      try {
-        return await pending.promise;
-      } catch (e) {
-        // If the pending request was cancelled or failed, continue to create a new one
-      }
+      // If we're already fetching, just wait for the promise
+      return pending.promise;
     }
 
     // Create new request with cancellation support
@@ -89,8 +85,7 @@ class IconCacheManager {
     });
 
     try {
-      const result = await promise;
-      return result;
+      return await promise;
     } finally {
       // Clean up pending request if it's still the same version
       const currentPending = this.pendingRequests.get(cacheKey);
@@ -130,15 +125,13 @@ class IconCacheManager {
       }
 
       // Convert to blob URL for efficient browser caching
-      // Since it's already a base64 from server, we can use it directly or blobify it
-      // Blobifying is better for memory management of large lists
+      // Check signal before each fetch step to ensure parallelism doesn't waste resources
+      if (signal.aborted) throw new Error('AbortError');
+      
       const res = await fetch(rawUrl, { signal });
       const blob = await res.blob();
       
-      // CRITICAL: Check signal again after long async operation
-      if (signal.aborted) {
-        throw new Error('AbortError');
-      }
+      if (signal.aborted) throw new Error('AbortError');
       
       const blobUrl = URL.createObjectURL(blob);
 
@@ -189,11 +182,14 @@ class IconCacheManager {
       return cached.url;
     }
     
-    // Not in cache - trigger async fetch in background
-    // This ensures the icon will be available on next render
+    // Check pending requests to avoid duplicate background triggers
+    if (this.pendingRequests.has(cacheKey)) {
+      return this.PLACEHOLDER;
+    }
+    
+    // Not in cache and not pending - trigger async fetch in background
     this.getIcon(address, chainId).catch((error) => {
-      // Log error for debugging but don't throw - placeholder will be shown
-      console.warn(`[IconCache] Background fetch failed for ${cacheKey}:`, error);
+      // Silent fail for background fetches
     });
     
     return this.PLACEHOLDER;
@@ -222,15 +218,17 @@ class IconCacheManager {
 
       if (toFetch.length === 0) return;
 
-      // Batch prefetching in smaller chunks to prevent head-of-line blocking
-      const CHUNK_SIZE = 5;
-      for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
-        const chunk = toFetch.slice(i, i + CHUNK_SIZE);
+      // Professional Batching: Limit total parallel icon requests to avoid browser congestion
+      // HTTP/2 can handle many requests, but DOM rendering and memory benefit from controlled bursts
+      const PARALLEL_LIMIT = 3;
+      for (let i = 0; i < toFetch.length; i += PARALLEL_LIMIT) {
+        const chunk = toFetch.slice(i, i + PARALLEL_LIMIT);
+        // Parallel fetch for the chunk
         await Promise.allSettled(
           chunk.map(token => this.getIcon(token.address, token.chainId))
         );
       }
-    }, 100);
+    }, 50);
   }
 
   /**
